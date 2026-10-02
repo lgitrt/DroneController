@@ -1,0 +1,42 @@
+# MATLAB
+*.slxc
+slprj/
+*.mat
+*.asv
+
+# Python/MATLAB cache
+__pycache__/
+*.pyc
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.~*
+
+# Temporary files
+temp_*.m
+debug_*.m
+test_*.m
+*.log
+
+# Large binary files (CAD models, videos)
+*.stl
+*.mp4
+*.jpg
+*.PNG
+*.png.backup
+
+# Keep results/ directory but ignore cache
+results/*.mat
+results/.cache
+
+# Documentation build artifacts
+docs/_build/
+*.pdf.backup
