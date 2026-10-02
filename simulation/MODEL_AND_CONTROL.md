@@ -61,7 +61,7 @@ I\dot\Omega=\tau-\Omega\times(I\Omega),\qquad
 \ddot\eta=E^{-1}\left[\dot\Omega-\dot E\dot\eta\right].
 $$
 
-Here $I=\operatorname{diag}(I_x,I_y,I_z)$ and $e_3=(0,0,1)^T$.
+Here $I=\mathrm{diag}(I_x,I_y,I_z)$ and $e_3=(0,0,1)^T$.
 The force $F_w$ is added by the simulator, not by the controllers.
 The motor-lag scenario additionally integrates
 
@@ -136,7 +136,7 @@ Jacobian of the nonlinear plant and checks independent yaw authority.
 The balanced penalties in [designLQR.m](matlab/designLQR.m) are
 
 $$
-Q=\operatorname{diag}(40,40,60,6,6,3,2,2,3,0.3,0.3,0.2),
+Q=\mathrm{diag}(40,40,60,6,6,3,2,2,3,0.3,0.3,0.2),
 \qquad R_u=10^{-10}I_4.
 $$
 
@@ -219,9 +219,9 @@ e_r=r_{\rm ref}-\hat r,\qquad e_v=v_{\rm ref}-\hat v,
 $$
 
 $$
-z_{r,k}^+=\operatorname{clip}(z_{r,k}+T_s e_{r,k},L_r),
+z_{r,k}^+=\mathrm{clip}(z_{r,k}+T_s e_{r,k},L_r),
 \quad
-a_c=\operatorname{clip}(a_{\rm ref}+K_p^r e_r+K_d^r e_v+K_i^r z_r^+,L_a).
+a_c=\mathrm{clip}(a_{\rm ref}+K_p^r e_r+K_d^r e_v+K_i^r z_r^+,L_a).
 $$
 
 `clip(z,L)` bounds each entry between `-L` and `L`. Derivative damping
@@ -236,11 +236,11 @@ $$
 $$
 
 Roll and pitch targets are bounded to $\pm25^\circ$.
-With $\operatorname{wrap}(a)=\operatorname{atan2}(\sin a,\cos a)$,
+With $\mathrm{wrap}(a)=\mathrm{atan2}(\sin a,\cos a)$,
 
 $$
-e_\eta=\operatorname{wrap}(\eta_c-\hat\eta),\quad
-z_{\eta,k}^+=\operatorname{clip}(z_{\eta,k}+T_s e_{\eta,k},L_\eta),
+e_\eta=\mathrm{wrap}(\eta_c-\hat\eta),\quad
+z_{\eta,k}^+=\mathrm{clip}(z_{\eta,k}+T_s e_{\eta,k},L_\eta),
 $$
 
 $$
@@ -389,7 +389,7 @@ G_k=
 0&0&\sqrt{\Delta t}I&0\\
 0&0&0&\sqrt{\Delta t}I
 \end{bmatrix},\qquad
-Q_k=G_k\,\operatorname{diag}(\sigma_a^2I,\sigma_g^2I,
+Q_k=G_k\,\mathrm{diag}(\sigma_a^2I,\sigma_g^2I,
 \sigma_{ba}^2I,\sigma_{bg}^2I)\,G_k^T,
 $$
 

@@ -250,7 +250,7 @@ $$
 \ddot\eta=E^{-1}(\dot\Omega-\dot E\dot\eta).
 $$
 
-Here $e_3=(0,0,1)^T$, $I=\operatorname{diag}(I_x,I_y,I_z)$.
+Here $e_3=(0,0,1)^T$, $I=\mathrm{diag}(I_x,I_y,I_z)$.
 RK4 integrates the plant every 5 ms. The disturbed scenario adds
 $\dot u_{\rm applied}=(u_{\rm commanded}-u_{\rm applied})/0.04$.
 All controllers share $0\le u_i\le u_{\max}$ and
@@ -277,7 +277,7 @@ $$
 #### LQR
 
 $$
-Q=\operatorname{diag}(40,40,60,6,6,3,2,2,3,0.3,0.3,0.2),\quad R_u=10^{-10}I_4,
+Q=\mathrm{diag}(40,40,60,6,6,3,2,2,3,0.3,0.3,0.2),\quad R_u=10^{-10}I_4,
 $$
 
 $$
@@ -323,8 +323,8 @@ Position/velocity errors are $e_r=r_{\rm ref}-\hat r$,
 $e_v=v_{\rm ref}-\hat v$. Candidate integrals are clipped componentwise:
 
 $$
-\tilde z_r=\operatorname{clip}(z_r+T_se_r,L_r),\quad
-a_c=\operatorname{clip}(a_{\rm ref}+K_p^re_r+K_d^re_v+K_i^r\tilde z_r,L_a).
+\tilde z_r=\mathrm{clip}(z_r+T_se_r,L_r),\quad
+a_c=\mathrm{clip}(a_{\rm ref}+K_p^re_r+K_d^re_v+K_i^r\tilde z_r,L_a).
 $$
 
 $$
@@ -333,10 +333,10 @@ $$
 $$
 
 Roll/pitch targets are bounded to 25 degrees. With
-$e_\eta=\operatorname{wrap}(\eta_c-\hat\eta)$ and previous target $s_k$:
+$e_\eta=\mathrm{wrap}(\eta_c-\hat\eta)$ and previous target $s_k$:
 
 $$
-\tilde z_\eta=\operatorname{clip}(z_\eta+T_se_\eta,L_\eta),\quad
+\tilde z_\eta=\mathrm{clip}(z_\eta+T_se_\eta,L_\eta),\quad
 \dot\eta_c=(\eta_c-s_k)/T_s,\quad
 \alpha_c=K_p^\eta e_\eta+K_d^\eta(\dot\eta_c-\widehat{\dot\eta})
 +K_i^\eta\tilde z_\eta,
