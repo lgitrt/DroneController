@@ -1,5 +1,5 @@
 %% RUN_CONTROLLER_COMPARISON
-% LQR versus constrained linear MPC on a shared nonlinear quadrotor plant.
+% LQR, MPC and cascaded PID with noisy aided-IMU navigation.
 % Author: Luca Obwegs
 clear; clc; close all;
 here = fileparts(mfilename('fullpath'));
@@ -10,32 +10,37 @@ Ts = 0.05;
 tEnd = 45;
 x0 = zeros(12,1);
 tuning = 'Balanced';
-scenarios = comparisonScenarios();
+scenarios = comparisonScenarios(true);
 
-fprintf('Designing matched-cost discrete LQR and constrained MPC...\n');
+fprintf('Designing LQR, constrained MPC and cascaded PID...\n');
 lqrController = struct('type','LQR', ...
     'K',designLQR(p,'Tuning',tuning,'SampleTime',Ts));
 mpcController = struct('type','MPC','mpcObj',designMPC_Linear(p,Ts, ...
     'Tuning',tuning,'MaxInputStep',scenarios(1).maxInputStep));
-summaryRows = {};
+pidController = designPID();
+controllers = {lqrController,mpcController,pidController};
+names = {'LQR','MPC','PID'};
+summaryRows = cell(1,numel(scenarios)*numel(names));
+comparisons = repmat(struct('outputs',[],'metrics',[]),1,numel(scenarios));
 for i = 1:numel(scenarios)
     fprintf('\nSimulating %s...\n',scenarios(i).name);
-    comparisons(i).lqr = simulateClosedLoop(p,traj,lqrController,Ts,tEnd,x0,scenarios(i));
-    comparisons(i).mpc = simulateClosedLoop(p,traj,mpcController,Ts,tEnd,x0,scenarios(i));
+    outputs = cell(1,3);
+    for j = 1:3
+        outputs{j} = simulateClosedLoop(p,traj,controllers{j},Ts,tEnd,x0,scenarios(i));
+    end
+    comparisons(i).outputs = outputs;
     directory = fullfile(here,'..','results',scenarios(i).slug);
-    comparisons(i).metrics = plotComparison(comparisons(i).lqr, ...
-        comparisons(i).mpc,p,directory,traj.rampTime);
-    names = {'LQR','MPC'};
-    for j = 1:2
+    comparisons(i).metrics = plotComparison(outputs,p,directory,traj.rampTime);
+    for j = 1:3
         metrics = comparisons(i).metrics.(names{j});
         row = metrics;
         row.scenario = scenarios(i).name;
         row.controller = names{j};
-        summaryRows{end+1} = row;
+        summaryRows{(i-1)*3+j} = row;
     end
 end
 summary = struct2table([summaryRows{:}]);
 writetable(summary,fullfile(here,'..','results','metrics.csv'));
-fprintf('\nBoth controllers use %.0f Hz sampling and the same input/rate limits.\n',1/Ts);
-disp(summary(:,{'scenario','controller','rmse3D','rmseCircle3D','maxError3D','meanCommandDeviation'}));
+fprintf('\nAll controllers use %.0f Hz sampling and the same input/rate limits.\n',1/Ts);
+disp(summary(:,{'scenario','controller','rmse3D','maxError3D','estimationPositionRMSE'}));
 fprintf('Figures and metrics saved under %s\n',fullfile(here,'..','results'));

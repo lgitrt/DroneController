@@ -1,160 +1,209 @@
-function metrics = plotComparison(lqrOut, mpcOut, p, outDir, rampTime)
-%PLOTCOMPARISON Readable LQR/MPC figures with error panels and diagnostics.
-if nargin < 4 || isempty(outDir)
-    outDir = fullfile(fileparts(mfilename('fullpath')),'..','results');
-end
-if nargin < 5
-    rampTime = 5;
-end
-if ~isequal(lqrOut.t,mpcOut.t) || ~isequal(lqrOut.Ref,mpcOut.Ref)
-    error('plotComparison:Comparison', 'Time grids and references must be identical.');
+function metrics = plotComparison(outputs, p, outDir, rampTime)
+%PLOTCOMPARISON Three-controller tracking, estimation and sensor figures.
+names = {'LQR','MPC','PID'};
+colors = [0 0.35 0.65;0.85 0.28 0.05;0.12 0.55 0.28];
+styles = {'-','--','-.'};
+t = outputs{1}.t;
+ref = outputs{1}.Ref;
+caption = outputs{1}.scenario;
+errors = cell(1,3);
+for j = 1:3
+    if ~isequal(outputs{j}.t,t) || ~isequal(outputs{j}.Ref,ref)
+        error('plotComparison:Comparison','Controller time grids and references must match.');
+    end
+    metrics.(names{j}) = trackingMetrics(outputs{j},p,rampTime);
+    errors{j} = outputs{j}.X-ref;
 end
 if ~exist(outDir,'dir')
     mkdir(outDir);
 end
-blue = [0.00 0.35 0.65];
-orange = [0.85 0.28 0.05];
-gray = [0.25 0.25 0.25];
-t = lqrOut.t;
-ref = lqrOut.Ref;
-errorLQR = lqrOut.X-ref;
-errorMPC = mpcOut.X-ref;
-caption = sprintf('%s | LQR vs MPC',lqrOut.scenario);
-metrics.LQR = trackingMetrics(lqrOut,p,rampTime);
-metrics.MPC = trackingMetrics(mpcOut,p,rampTime);
 
-[f,layout] = canvas([1200 590],1,2,[caption ' - circle tracking']);
+[f,layout] = canvas([1240 600],1,2,[caption ' | circle tracking']);
 ax = nexttile(layout);
-trajectory(ax,lqrOut,mpcOut,blue,orange,gray);
-axis(ax,'equal');
-xlabel(ax,'x [m]'); ylabel(ax,'y [m]'); title(ax,'Complete path (including smooth start)');
-legendAbove(ax,{'Reference','LQR','MPC'});
+pathLines(ax,outputs,ref,colors,styles);
+axis(ax,'equal'); xlabel(ax,'x [m]'); ylabel(ax,'y [m]');
+title(ax,'Complete path (including ramp)');
+legendAbove(ax,[{'Reference'},names]);
 ax = nexttile(layout);
-trajectory(ax,lqrOut,mpcOut,blue,orange,gray);
-indices = find(t >= rampTime);
-[~,idx] = max(vecnorm(lqrOut.X(1:2,indices)-mpcOut.X(1:2,indices),2,1));
-k = indices(idx);
-points = [ref(1:2,k),lqrOut.X(1:2,k),mpcOut.X(1:2,k)];
+pathLines(ax,outputs,ref,colors,styles);
+separation = zeros(size(t));
+for j = 1:3
+    separation = max(separation,vecnorm(errors{j}(1:2,:),2,1));
+end
+separation(t < rampTime) = -inf;
+[~,k] = max(separation);
+points = [ref(1:2,k),outputs{1}.X(1:2,k),outputs{2}.X(1:2,k),outputs{3}.X(1:2,k)];
 center = mean(points,2);
-halfWidth = max(0.04,1.2*max(abs(points-center),[],'all'));
-axis(ax,'equal');
-xlim(ax,center(1)+[-1 1]*halfWidth);
-ylim(ax,center(2)+[-1 1]*halfWidth);
+halfWidth = max(0.05,1.2*max(abs(points-center),[],'all'));
+axis(ax,'equal'); xlim(ax,center(1)+[-1 1]*halfWidth); ylim(ax,center(2)+[-1 1]*halfWidth);
 xlabel(ax,'x [m]'); ylabel(ax,'y [m]');
-title(ax,sprintf('Detail near t = %.2f s (same paths)',t(k)));
+title(ax,sprintf('Detail near largest horizontal error, t = %.2f s',t(k)));
 saveFigure(f,outDir,'xy_tracking_comparison');
 
-[f,layout] = canvas([1200 950],3,2,[caption ' - position and signed errors']);
+[f,layout] = canvas([1240 940],3,2,[caption ' | position and signed tracking errors']);
 for i = 1:3
     ax = nexttile(layout);
-    referenceLines(ax,t,ref(i,:),lqrOut.X(i,:),mpcOut.X(i,:),blue,orange,gray);
+    referenceLine(ax,t,ref(i,:));
+    values = cellfun(@(o) o.X(i,:),outputs,'UniformOutput',false);
+    controllerLines(ax,t,values,colors,styles);
     ylabel(ax,sprintf('%s [m]',char('x'+i-1)));
     if i == 1
-        title(ax,'Position'); legendAbove(ax,{'Reference','LQR','MPC'});
+        title(ax,'True position'); legendAbove(ax,[{'Reference'},names]);
     end
     ax = nexttile(layout);
-    pairLines(ax,t,100*errorLQR(i,:),100*errorMPC(i,:),blue,orange);
-    yline(ax,0,':','Color',gray);
+    values = cellfun(@(e) 100*e(i,:),errors,'UniformOutput',false);
+    controllerLines(ax,t,values,colors,styles);
     ylabel(ax,sprintf('e_%s [cm]',char('x'+i-1)));
+    yline(ax,0,':k','HandleVisibility','off');
     if i == 1
-        title(ax,'Actual - reference (independent error scale)');
+        title(ax,'True position - reference');
     end
 end
 saveFigure(f,outDir,'xyz_tracking_comparison');
 
-[f,layout] = canvas([1200 950],3,2,[caption ' - attitude and signed errors']);
+[f,layout] = canvas([1240 940],3,2,[caption ' | attitude and signed tracking errors']);
 labels = {'Roll','Pitch','Yaw'};
 for i = 1:3
     ax = nexttile(layout);
-    referenceLines(ax,t,rad2deg(ref(3+i,:)),rad2deg(lqrOut.X(3+i,:)), ...
-        rad2deg(mpcOut.X(3+i,:)),blue,orange,gray);
+    referenceLine(ax,t,rad2deg(ref(3+i,:)));
+    values = cellfun(@(o) rad2deg(o.X(3+i,:)),outputs,'UniformOutput',false);
+    controllerLines(ax,t,values,colors,styles);
     ylabel(ax,[labels{i} ' [deg]']);
     if i == 1
-        title(ax,'Euler angles'); legendAbove(ax,{'Reference','LQR','MPC'});
+        title(ax,'True attitude'); legendAbove(ax,[{'Reference'},names]);
     end
     ax = nexttile(layout);
-    pairLines(ax,t,rad2deg(errorLQR(3+i,:)),rad2deg(errorMPC(3+i,:)),blue,orange);
-    yline(ax,0,':','Color',gray);
+    values = cellfun(@(e) rad2deg(e(3+i,:)),errors,'UniformOutput',false);
+    controllerLines(ax,t,values,colors,styles);
     ylabel(ax,[labels{i} ' error [deg]']);
     if i == 1
-        title(ax,'Actual - reference');
+        title(ax,'True attitude - reference');
     end
 end
 saveFigure(f,outDir,'attitude_comparison');
 
-[f,layout] = canvas([1200 760],2,2,[caption ' - rotor input deviations']);
+[f,layout] = canvas([1240 1080],4,2,[caption ' | rotor squared-speed deviations']);
 for i = 1:4
     ax = nexttile(layout);
-    pairLines(ax,t(1:end-1),100*(lqrOut.U(i,:)/p.uHover-1), ...
-        100*(mpcOut.U(i,:)/p.uHover-1),blue,orange);
-    plot(ax,t,100*(lqrOut.UApplied(i,:)/p.uHover-1),':','Color',blue,'LineWidth',1);
-    plot(ax,t,100*(mpcOut.UApplied(i,:)/p.uHover-1),'-.','Color',orange,'LineWidth',1);
-    yline(ax,0,':','Color',gray);
-    xlabel(ax,'Time [s]'); ylabel(ax,'Deviation from hover [% of u_{hover}]');
-    title(ax,sprintf('Rotor %d | u = squared rotor speed',i));
+    values = cellfun(@(o) 100*(o.U(i,:)/p.uHover-1),outputs,'UniformOutput',false);
+    controllerLines(ax,t(1:end-1),values,colors,styles);
+    ylabel(ax,sprintf('Rotor %d [%% hover]',i));
     if i == 1
-        legendAbove(ax,{'LQR command','MPC command','LQR applied','MPC applied'});
+        title(ax,'Requested inputs (after shared bounds)');
+        legendAbove(ax,names);
+    end
+    ax = nexttile(layout);
+    values = cellfun(@(o) 100*(o.UApplied(i,:)/p.uHover-1),outputs,'UniformOutput',false);
+    controllerLines(ax,t,values,colors,styles);
+    ylabel(ax,sprintf('Rotor %d [%% hover]',i));
+    if i == 1
+        title(ax,'Applied motor inputs (includes lag)');
     end
 end
 saveFigure(f,outDir,'rotor_commands_comparison');
 
-[f,layout] = canvas([1200 570],1,2,[caption ' - tracking metrics']);
+[f,layout] = canvas([1240 600],1,2,[caption ' | physical-distance tracking metrics']);
 ax = nexttile(layout);
-data = 100*[metrics.LQR.rmsePerAxis;metrics.MPC.rmsePerAxis]';
-bars = bar(ax,1:3,data);
-bars(1).FaceColor = blue; bars(2).FaceColor = orange;
-xticks(ax,1:3); xticklabels(ax,{'x','y','z'});
+data = zeros(3,3);
+for j = 1:3
+    data(:,j) = 100*metrics.(names{j}).rmsePerAxis';
+end
+metricBars(ax,data,{'x','y','z'},colors);
 ylabel(ax,'Per-axis RMSE [cm]'); title(ax,'Whole run, including ramp');
-legendAbove(ax,{'LQR','MPC'});
-labelBars(ax,bars);
+legendAbove(ax,names);
 ax = nexttile(layout);
-data = 100*[metrics.LQR.rmse3D metrics.MPC.rmse3D; ...
-    metrics.LQR.rmseCircle3D metrics.MPC.rmseCircle3D; ...
-    metrics.LQR.maxError3D metrics.MPC.maxError3D];
-bars = bar(ax,1:3,data);
-bars(1).FaceColor = blue; bars(2).FaceColor = orange;
-xticks(ax,1:3); xticklabels(ax,{'3D RMS, all','3D RMS, circle','Peak distance'});
+for j = 1:3
+    m = metrics.(names{j});
+    data(:,j) = 100*[m.rmse3D;m.rmseCircle3D;m.maxError3D];
+end
+metricBars(ax,data,{'3D RMS, all','3D RMS, circle','Peak'},colors);
 ylabel(ax,'Euclidean position error [cm]');
-title(ax,sprintf('Circle metrics start at t = %.1f s',rampTime));
-labelBars(ax,bars);
+title(ax,sprintf('Circle metrics use t >= %.1f s',rampTime));
 saveFigure(f,outDir,'rmse_summary');
 
-[f,layout] = canvas([1200 770],2,1,[caption ' - error magnitudes']);
-ax = nexttile(layout);
-pairLines(ax,t,100*vecnorm(errorLQR(1:3,:),2,1), ...
-    100*vecnorm(errorMPC(1:3,:),2,1),blue,orange);
-ylabel(ax,'3D position error [cm]'); title(ax,'Euclidean distance to reference');
-legendAbove(ax,{'LQR','MPC'});
-xline(ax,rampTime,':','Ramp end','HandleVisibility','off');
-ax = nexttile(layout);
-pairLines(ax,t,100*vecnorm(errorLQR(1:2,:),2,1), ...
-    100*vecnorm(errorMPC(1:2,:),2,1),blue,orange);
-ylabel(ax,'Horizontal error [cm]'); title(ax,'XY distance to reference');
+[f,layout] = canvas([1240 740],2,1,[caption ' | tracking error magnitudes']);
+for i = 1:2
+    ax = nexttile(layout);
+    dimensions = 1:3;
+    if i == 2
+        dimensions = 1:2;
+    end
+    values = cellfun(@(e) 100*vecnorm(e(dimensions,:),2,1),errors,'UniformOutput',false);
+    controllerLines(ax,t,values,colors,styles);
+    ylabel(ax,'Position error [cm]');
+    if i == 1
+        title(ax,'3D Euclidean distance'); legendAbove(ax,names);
+    else
+        title(ax,'Horizontal distance');
+    end
+    xline(ax,rampTime,':','Ramp end','HandleVisibility','off');
+end
 saveFigure(f,outDir,'tracking_error_comparison');
 
-[f,layout] = canvas([1200 780],2,2,[caption ' - scenario and solver diagnostics']);
-ax = nexttile(layout);
-plot(ax,t,lqrOut.windForce','LineWidth',1.6);
-xlabel(ax,'Time [s]'); ylabel(ax,'External inertial force [N]');
-title(ax,'Same unmeasured force for both controllers');
+[f,layout] = canvas([1240 780],2,2,[caption ' | disturbance and controller diagnostics']);
+ax = nexttile(layout); styleAxes(ax);
+plot(ax,t,outputs{1}.windForce','LineWidth',1.5);
+xlabel(ax,'Time [s]'); ylabel(ax,'Inertial force [N]');
+title(ax,'Same wind force for all controllers');
 legend(ax,{'F_x','F_y','F_z'},'Location','northoutside','Orientation','horizontal');
 ax = nexttile(layout);
-pairLines(ax,t(1:end-1),100*max(abs(diff([p.uHover*ones(4,1),lqrOut.U],1,2)),[],1)/p.uHover, ...
-    100*max(abs(diff([p.uHover*ones(4,1),mpcOut.U],1,2)),[],1)/p.uHover,blue,orange);
-limit = 100*lqrOut.maxInputStep;
-yline(ax,limit,':k',sprintf('Shared %.0f%% step limit',limit));
-ylabel(ax,'Largest rotor command step [% of u_{hover}]');
-title(ax,'Identical actuator command limits');
-legend(ax,{'LQR','MPC'},'Location','northoutside','Orientation','horizontal');
+values = cellfun(@(o) 100*max(abs(diff([p.uHover*ones(4,1),o.U],1,2)),[],1)/p.uHover, ...
+    outputs,'UniformOutput',false);
+controllerLines(ax,t(1:end-1),values,colors,styles);
+yline(ax,100*outputs{1}.maxInputStep,':k','Shared limit','HandleVisibility','off');
+ylabel(ax,'Largest command step [% hover]'); title(ax,'Shared input/rate constraints');
+legend(ax,names,'Location','northoutside','Orientation','horizontal');
 ax = nexttile(layout);
-pairLines(ax,t(1:end-1),1000*lqrOut.solveTime,1000*mpcOut.solveTime,blue,orange);
-ylabel(ax,'Controller update time [ms]');
-title(ax,'Host timing (includes MPC reference preview)');
-ax = nexttile(layout);
-stairs(ax,t(1:end-1),mpcOut.solverIterations,'Color',orange,'LineWidth',1.5);
-xlabel(ax,'Time [s]'); ylabel(ax,'QP iterations');
-title(ax,'MPC solver: nonpositive status aborts the run');
+values = cellfun(@(o) 1000*o.solveTime,outputs,'UniformOutput',false);
+controllerLines(ax,t(1:end-1),values,colors,styles);
+ylabel(ax,'Host controller time [ms]'); title(ax,'Excludes EKF and plant integration');
+ax = nexttile(layout); styleAxes(ax);
+stairs(ax,t(1:end-1),outputs{2}.solverIterations,'Color',colors(2,:),'LineWidth',1.5);
+xlabel(ax,'Time [s]'); ylabel(ax,'QP iterations'); title(ax,'MPC: failed solves stop the run');
 saveFigure(f,outDir,'diagnostics');
+
+if outputs{1}.estimationEnabled
+    [f,layout] = canvas([1240 960],3,2,[caption ' | EKF estimation errors (not tracking errors)']);
+    for i = 1:3
+        ax = nexttile(layout);
+        values = cellfun(@(o) 100*(o.XEstimated(i,:)-o.X(i,:)),outputs,'UniformOutput',false);
+        controllerLines(ax,t,values,colors,styles);
+        ylabel(ax,sprintf('%s estimate error [cm]',char('x'+i-1)));
+        if i == 1
+            title(ax,'Estimated - true position'); legendAbove(ax,names);
+        end
+        ax = nexttile(layout);
+        values = cellfun(@(o) rad2deg(atan2(sin(o.XEstimated(3+i,:)-o.X(3+i,:)), ...
+            cos(o.XEstimated(3+i,:)-o.X(3+i,:)))),outputs,'UniformOutput',false);
+        controllerLines(ax,t,values,colors,styles);
+        ylabel(ax,[labels{i} ' estimate error [deg]']);
+        if i == 1
+            title(ax,'Estimated - true attitude');
+        end
+    end
+    saveFigure(f,outDir,'estimation_errors');
+
+    [f,layout] = canvas([1240 960],3,2,[caption ' | raw body IMU (MPC run, 200 Hz)']);
+    sensors = outputs{2}.sensors;
+    for i = 1:3
+        ax = nexttile(layout); styleAxes(ax);
+        plot(ax,sensors.t,sensors.accel(i,:),'Color',[0.65 0.75 0.85],'LineWidth',0.6);
+        plot(ax,sensors.t,sensors.accelTruth(i,:),'k','LineWidth',1.2);
+        xlabel(ax,'Time [s]'); ylabel(ax,sprintf('f_%s [m/s^2]',char('x'+i-1)));
+        if i == 1
+            title(ax,'Accelerometer specific force (includes gravity)');
+            legendAbove(ax,{'Noisy + biased measurement','Truth (plot only)'});
+        end
+        ax = nexttile(layout); styleAxes(ax);
+        plot(ax,sensors.t,rad2deg(sensors.gyro(i,:)),'Color',[0.65 0.75 0.85],'LineWidth',0.6);
+        plot(ax,sensors.t,rad2deg(sensors.gyroTruth(i,:)),'k','LineWidth',1.2);
+        xlabel(ax,'Time [s]'); ylabel(ax,sprintf('\\omega_%s [deg/s]',char('x'+i-1)));
+        if i == 1
+            title(ax,'Gyroscope body angular velocity');
+        end
+    end
+    saveFigure(f,outDir,'imu_measurements');
+end
 end
 
 function [f,layout] = canvas(sizePixels,rows,columns,heading)
@@ -164,33 +213,36 @@ title(layout,heading,'FontSize',16,'FontWeight','bold','Interpreter','none');
 end
 
 function styleAxes(ax)
-hold(ax,'on'); grid(ax,'on'); box(ax,'on');
-ax.FontSize = 11;
-ax.LineWidth = 0.8;
+hold(ax,'on'); grid(ax,'on'); box(ax,'on'); ax.FontSize = 11; ax.LineWidth = 0.8;
 end
 
-function pairLines(ax,t,a,b,blue,orange)
+function controllerLines(ax,t,values,colors,styles)
 styleAxes(ax);
-plot(ax,t,a,'-','Color',blue,'LineWidth',1.7);
-plot(ax,t,b,'--','Color',orange,'LineWidth',1.7);
-xlabel(ax,'Time [s]');
-xlim(ax,[t(1) t(end)]);
+for j = 1:3
+    plot(ax,t,values{j},styles{j},'Color',colors(j,:),'LineWidth',1.5);
+end
+xlabel(ax,'Time [s]'); xlim(ax,[t(1) t(end)]);
 end
 
-function referenceLines(ax,t,r,a,b,blue,orange,gray)
-styleAxes(ax);
-plot(ax,t,r,':','Color',gray,'LineWidth',1.8);
-plot(ax,t,a,'-','Color',blue,'LineWidth',1.5);
-plot(ax,t,b,'--','Color',orange,'LineWidth',1.5);
-xlabel(ax,'Time [s]');
-xlim(ax,[t(1) t(end)]);
+function referenceLine(ax,t,values)
+styleAxes(ax); plot(ax,t,values,':','Color',[0.25 0.25 0.25],'LineWidth',1.8);
 end
 
-function trajectory(ax,a,b,blue,orange,gray)
-styleAxes(ax);
-plot(ax,a.Ref(1,:),a.Ref(2,:),':','Color',gray,'LineWidth',2);
-plot(ax,a.X(1,:),a.X(2,:),'-','Color',blue,'LineWidth',1.7);
-plot(ax,b.X(1,:),b.X(2,:),'--','Color',orange,'LineWidth',1.7);
+function pathLines(ax,outputs,ref,colors,styles)
+styleAxes(ax); plot(ax,ref(1,:),ref(2,:),':k','LineWidth',1.8);
+for j = 1:3
+    plot(ax,outputs{j}.X(1,:),outputs{j}.X(2,:),styles{j},'Color',colors(j,:),'LineWidth',1.5);
+end
+end
+
+function metricBars(ax,data,labels,colors)
+styleAxes(ax); bars = bar(ax,data);
+for j = 1:3
+    bars(j).FaceColor = colors(j,:);
+    text(ax,bars(j).XEndPoints,bars(j).YEndPoints,compose('%.2f',bars(j).YData), ...
+        'HorizontalAlignment','center','VerticalAlignment','bottom','FontSize',10);
+end
+xticks(ax,1:3); xticklabels(ax,labels); ylim(ax,[0,max(data,[],'all')*1.25+0.05]);
 end
 
 function legendAbove(ax,labels)
@@ -198,17 +250,6 @@ lgd = legend(ax,labels,'Orientation','horizontal','FontSize',11);
 lgd.Layout.Tile = 'north';
 end
 
-function labelBars(ax,bars)
-styleAxes(ax);
-for i = 1:numel(bars)
-    text(ax,bars(i).XEndPoints,bars(i).YEndPoints, ...
-        compose('%.2f',bars(i).YData),'HorizontalAlignment','center', ...
-        'VerticalAlignment','bottom','FontSize',11);
-end
-ylim(ax,[0 max([bars.YData],[],'all')*1.22+0.05]);
-end
-
 function saveFigure(f,directory,name)
-drawnow;
-exportgraphics(f,fullfile(directory,[name '.png']),'Resolution',180);
+drawnow; exportgraphics(f,fullfile(directory,[name '.png']),'Resolution',180);
 end
