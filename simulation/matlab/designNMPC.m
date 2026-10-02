@@ -1,13 +1,12 @@
 function nlobj = designNMPC(p, Ts, varargin)
-%DESIGNNMPC Nonlinear MPC controller for the quadrotor.
+%DESIGNNMPC Experimental nonlinear MPC template (not the tested comparison).
 %   NLOBJ = DESIGNNMPC(P, TS) builds an nlmpc object that stabilizes
 %   the quadrotor at a commanded setpoint using the nonlinear prediction
 %   model QUADROTORSTATEFCN/QUADROTORSTATEJACOBIANFCN.
 %
-%   The design is conservative: it uses a longer prediction horizon,
-%   a shorter control horizon, and soft output tracking to ensure the
-%   solver converges reliably. Reference tracking is approximately
-%   achieved via feedback rather than aggressive trajectory optimization.
+%   This template uses soft tracking of position and attitude. Its
+%   closed-loop performance has not been validated. Use DESIGNMPC_LINEAR
+%   for the tested, constrained circle-tracking controller.
 %
 %   NOTE ON ROTOR COMMAND BOUNDS: the manipulated variables are squared
 %   rotor speeds ui = omega_i^2 (rad^2/s^2, see PARAMETERS.M), so their
@@ -25,8 +24,8 @@ ny = 6;  % Output: [x y z phi theta psi]
 nu = 4;
 
 nlobj = nlmpc(nx, ny, nu);
-nlobj.Model.StateFcn = "QuadrotorStateFcn";
-nlobj.Jacobian.StateFcn = @QuadrotorStateJacobianFcn;
+nlobj.Model.StateFcn = @(x,u) QuadrotorStateFcn(x,u,p);
+nlobj.Jacobian.StateFcn = @(x,u) QuadrotorStateJacobianFcn(x,u,p);
 nlobj.Model.OutputFcn = @(x, u) x(1:6);  % Extract [x y z phi theta psi]
 
 nlobj.Ts = Ts;

@@ -107,52 +107,81 @@ behind the identical interface for direct comparison.
 
 The standalone [simulation](simulation/README.md) lives entirely in
 `simulation/`, separate from the embedded firmware. It compares
-**aggressive and conservative LQR tuning** on the same nonlinear,
-12-state quadrotor model tracking a smooth-start circular trajectory.
-These are simulation results, not hardware flight-test results.
+**discrete LQR and constrained linear MPC** on the same nonlinear,
+12-state quadrotor plant, with an ideal baseline and a separate
+wind-and-motor-lag experiment. These are simulation results, not
+hardware flight-test results.
 
-From the repository root in MATLAB (Control System Toolbox required):
+From the repository root in MATLAB (Control System Toolbox and Model
+Predictive Control Toolbox required):
 
 ```matlab
 run(fullfile('simulation', 'matlab', 'run_controller_comparison.m'))
 ```
 
-The run regenerates all five plots in `simulation/results/` and prints
-position RMSE and mean rotor-command deviation from hover. The default
-trajectory has a 2 m radius, a 30 s period, a 2.5 m altitude, and a 5 s
-smooth ramp, simulated for 45 s at a 100 Hz controller rate.
+The default circle has a 2 m radius, a 30 s period, a 2.5 m altitude,
+and a 5 s smooth ramp. Both controllers run at **20 Hz** for 45 s, with
+the same physical state/input cost weights and rotor/rate limits.
+MPC predicts 2 s ahead using the known trajectory; LQR receives the
+current reference, including velocity and attitude feedforward.
+Neither controller knows the injected wind or models the added motor lag.
 
-Verified in MATLAB R2024b:
+Verified in MATLAB R2024b; RMS here means the **Euclidean 3D position
+error**, not the smaller coordinate-averaged metric from the old plots:
 
-| Metric | Aggressive LQR | Conservative LQR |
-|--------|----------------|------------------|
-| Overall position RMSE | 0.0051 m | 0.0266 m |
-| Mean rotor-command deviation from hover | 11,503.0 rad^2/s^2 | 6,483.1 rad^2/s^2 |
+| Experiment | LQR 3D RMS | MPC 3D RMS | LQR peak | MPC peak |
+|------------|------------|------------|----------|----------|
+| Ideal baseline | 1.78 cm | 0.27 cm | 7.52 cm | 1.29 cm |
+| Wind + 40 ms motor lag | 4.62 cm | 4.26 cm | 12.67 cm | 12.68 cm |
 
-Overall RMSE is averaged over all position coordinates and time samples;
-rotor-command deviation measures control effort, not electrical energy.
+The excellent ideal tracking is conditional on perfect state feedback,
+a slow trajectory, and accurate model parameters. MPC's future reference
+preview improves the startup transient; its wind rejection is not
+automatically better. In the disturbed case the peak errors are almost
+identical. The nonlinear plant's previously inconsistent yaw mapping has
+also been corrected and tested, so the old two-LQR figures are superseded.
 
-### Circle tracking
+### Ideal baseline: full comparison
 
-![Circular trajectory: reference, aggressive LQR, and conservative LQR](simulation/results/xy_tracking_comparison.png)
+![Ideal circle tracking with a zoomed detail](simulation/results/ideal/xy_tracking_comparison.png)
 
-### Position and attitude
+![Ideal position tracking and signed errors in centimetres](simulation/results/ideal/xyz_tracking_comparison.png)
 
-![Position tracking comparison over time](simulation/results/xyz_tracking_comparison.png)
+![Ideal attitude tracking and signed errors](simulation/results/ideal/attitude_comparison.png)
 
-![Roll, pitch, and yaw comparison over time](simulation/results/attitude_comparison.png)
+![Ideal rotor commands and applied inputs](simulation/results/ideal/rotor_commands_comparison.png)
 
-### Control effort and tracking error
+![Ideal per-axis and 3D tracking metrics](simulation/results/ideal/rmse_summary.png)
 
-![Rotor commands for both LQR tunings](simulation/results/rotor_commands_comparison.png)
+![Ideal 3D and horizontal error magnitudes](simulation/results/ideal/tracking_error_comparison.png)
 
-![Per-axis position RMSE for both LQR tunings](simulation/results/rmse_summary.png)
+![Ideal scenario, input limits, and MPC solver diagnostics](simulation/results/ideal/diagnostics.png)
 
-MPC and nonlinear MPC design templates are retained as **experimental**
-source files; they are not run by this comparison and are not validated
-LQR-versus-MPC results. See the
-[simulation guide](simulation/README.md) for file layout, metric
-definitions, dependencies, and limitations.
+### Wind and motor lag: full comparison
+
+The repeatable force acts between 12 and 28 s. This is a simplified
+robustness test, not a calibrated aerodynamic wind model.
+
+![Disturbed circle tracking with a zoomed detail](simulation/results/robustness/xy_tracking_comparison.png)
+
+![Disturbed position tracking and signed errors in centimetres](simulation/results/robustness/xyz_tracking_comparison.png)
+
+![Disturbed attitude tracking and signed errors](simulation/results/robustness/attitude_comparison.png)
+
+![Disturbed rotor commands and lagged applied inputs](simulation/results/robustness/rotor_commands_comparison.png)
+
+![Disturbed per-axis and 3D tracking metrics](simulation/results/robustness/rmse_summary.png)
+
+![Disturbed 3D and horizontal error magnitudes](simulation/results/robustness/tracking_error_comparison.png)
+
+![Injected force, input limits, and MPC solver diagnostics](simulation/results/robustness/diagnostics.png)
+
+All figures use consistent colours and line styles, external legends,
+zoomed/error panels, and high-resolution exports. Exact metrics are in
+[metrics.csv](simulation/results/metrics.csv). See the
+[simulation guide](simulation/README.md) for equations, MPC formulation,
+test commands, and limitations. The separate nonlinear MPC template
+remains experimental; **linear MPC is implemented and tested**.
 
 ## Testing
 
