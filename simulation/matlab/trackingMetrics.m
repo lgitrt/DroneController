@@ -14,4 +14,8 @@ metrics.saturatedSamples = nnz(out.saturated);
 metrics.rateLimitedSamples = nnz(out.rateLimited);
 metrics.meanSolveTimeMs = 1000*mean(out.solveTime);
 metrics.maxSolveTimeMs = 1000*max(out.solveTime);
+estimateError = out.XEstimated-out.X;
+estimateError(4:6,:) = atan2(sin(estimateError(4:6,:)),cos(estimateError(4:6,:)));
+metrics.estimationPositionRMSE = sqrt(mean(sum(estimateError(1:3,:).^2,1)));
+metrics.estimationAttitudeRMSEDeg = rad2deg(sqrt(mean(sum(estimateError(4:6,:).^2,1))));
 end

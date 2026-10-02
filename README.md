@@ -107,10 +107,10 @@ behind the identical interface for direct comparison.
 
 The standalone [simulation](simulation/README.md) lives entirely in
 `simulation/`, separate from the embedded firmware. It compares
-**discrete LQR and constrained linear MPC** on the same nonlinear,
-12-state quadrotor plant, with an ideal baseline and a separate
-wind-and-motor-lag experiment. These are simulation results, not
-hardware flight-test results.
+**LQR, constrained linear MPC, and cascaded PID with standard motor
+mixing** on the same nonlinear quadrotor plant. Noisy-sensor experiments
+use a **15-state navigation EKF**, not perfect state feedback. These
+are simulation results, not hardware flight-test results.
 
 From the repository root in MATLAB (Control System Toolbox and Model
 Predictive Control Toolbox required):
@@ -120,26 +120,36 @@ run(fullfile('simulation', 'matlab', 'run_controller_comparison.m'))
 ```
 
 The default circle has a 2 m radius, a 30 s period, a 2.5 m altitude,
-and a 5 s smooth ramp. Both controllers run at **20 Hz** for 45 s, with
-the same physical state/input cost weights and rotor/rate limits.
-MPC predicts 2 s ahead using the known trajectory; LQR receives the
-current reference, including velocity and attitude feedforward.
-Neither controller knows the injected wind or models the added motor lag.
+and a 5 s smooth ramp. All controllers run at **20 Hz** for 45 s with
+shared rotor/rate limits. A **200 Hz noisy accelerometer/gyro**, **10 Hz
+RTK-GNSS**, and **20 Hz magnetometer** supply the EKF. Residual biases
+and random-walk drift are included. The RTK fixed-solution assumption is
+explicit: this is not centimetre accuracy from ordinary GPS.
+
+MPC predicts 2 s ahead; LQR uses current reference feedforward; PID uses
+cascaded position/attitude loops with integral anti-windup and physical
+plus-frame mixing. LQR/MPC share quadratic costs; PID is separately tuned.
 
 Verified in MATLAB R2024b; RMS here means the **Euclidean 3D position
 error**, not the smaller coordinate-averaged metric from the old plots:
 
-| Experiment | LQR 3D RMS | MPC 3D RMS | LQR peak | MPC peak |
-|------------|------------|------------|----------|----------|
-| Ideal baseline | 1.78 cm | 0.27 cm | 7.52 cm | 1.29 cm |
-| Wind + 40 ms motor lag | 4.62 cm | 4.26 cm | 12.67 cm | 12.68 cm |
+| Experiment | LQR 3D RMS | MPC 3D RMS | PID 3D RMS |
+|------------|------------|------------|------------|
+| Perfect-state ideal | 1.78 cm | 0.27 cm | 0.39 cm |
+| Noisy sensors + EKF | 3.31 cm | 2.45 cm | 3.07 cm |
+| Sensors + wind + 40 ms motor lag | 5.63 cm | 5.17 cm | 11.39 cm |
 
 The excellent ideal tracking is conditional on perfect state feedback,
-a slow trajectory, and accurate model parameters. MPC's future reference
-preview improves the startup transient; its wind rejection is not
-automatically better. In the disturbed case the peak errors are almost
-identical. The nonlinear plant's previously inconsistent yaw mapping has
-also been corrected and tested, so the old two-LQR figures are superseded.
+a slow trajectory, and accurate model parameters. The sensor experiments
+use the same estimator/noise configuration and matched random sequences
+for all controllers, with no truth-state feedback. Disturbed peak errors
+are 13.04 cm LQR, 13.08 cm MPC, and 30.06 cm PID. These results are a
+single reproducible noise realization, not a universal controller ranking.
+
+The [equations and state-space models](simulation/MODEL_AND_CONTROL.md)
+derive the plant, mixer, LQR Riccati equation, MPC QP, PID controller
+state realization, sensor measurements, and EKF transition/measurement
+matrices with Joseph-form covariance updates.
 
 ### Ideal baseline: full comparison
 
@@ -157,7 +167,27 @@ also been corrected and tested, so the old two-LQR figures are superseded.
 
 ![Ideal scenario, input limits, and MPC solver diagnostics](simulation/results/ideal/diagnostics.png)
 
-### Wind and motor lag: full comparison
+### Noisy sensors and EKF: full comparison
+
+![Sensed circle tracking with a zoomed detail](simulation/results/sensors/xy_tracking_comparison.png)
+
+![Sensed position tracking and signed errors](simulation/results/sensors/xyz_tracking_comparison.png)
+
+![Sensed attitude tracking and signed errors](simulation/results/sensors/attitude_comparison.png)
+
+![Sensed rotor commands and applied inputs](simulation/results/sensors/rotor_commands_comparison.png)
+
+![Sensed tracking metrics for LQR, MPC, and PID](simulation/results/sensors/rmse_summary.png)
+
+![Sensed error magnitudes](simulation/results/sensors/tracking_error_comparison.png)
+
+![Sensed controller diagnostics](simulation/results/sensors/diagnostics.png)
+
+![EKF position and attitude estimation errors](simulation/results/sensors/estimation_errors.png)
+
+![Noisy body-frame accelerometer and gyro with labelled truth](simulation/results/sensors/imu_measurements.png)
+
+### Wind, motor lag, and noisy sensors: full comparison
 
 The repeatable force acts between 12 and 28 s. This is a simplified
 robustness test, not a calibrated aerodynamic wind model.
@@ -176,12 +206,17 @@ robustness test, not a calibrated aerodynamic wind model.
 
 ![Injected force, input limits, and MPC solver diagnostics](simulation/results/robustness/diagnostics.png)
 
+![Disturbed EKF estimation errors](simulation/results/robustness/estimation_errors.png)
+
+![Disturbed noisy body-frame IMU measurements](simulation/results/robustness/imu_measurements.png)
+
 All figures use consistent colours and line styles, external legends,
 zoomed/error panels, and high-resolution exports. Exact metrics are in
 [metrics.csv](simulation/results/metrics.csv). See the
-[simulation guide](simulation/README.md) for equations, MPC formulation,
-test commands, and limitations. The separate nonlinear MPC template
-remains experimental; **linear MPC is implemented and tested**.
+[simulation guide](simulation/README.md) for all 25 plots, sensor noise
+assumptions, PID gains, test commands, and limitations. The separate
+nonlinear MPC template remains experimental; linear MPC, PID, and the
+aided-IMU EKF are implemented and tested.
 
 ## Testing
 
