@@ -1,42 +1,14 @@
-# MATLAB
-*.slxc
-slprj/
-*.mat
-*.asv
+# Build output
+Debug/
+Release/
 
-# Python/MATLAB cache
-__pycache__/
-*.pyc
-*.egg-info/
+# STM32CubeIDE / Eclipse workspace metadata (local to each machine)
+.metadata/
 
-# IDE
-.vscode/
-.idea/
+# Host-side unit test build output
+tests/build/
+
+# OS / editor cruft
 *.swp
-*~
-
-# OS
 .DS_Store
 Thumbs.db
-.~*
-
-# Temporary files
-temp_*.m
-debug_*.m
-test_*.m
-*.log
-
-# Large binary files (CAD models, videos)
-*.stl
-*.mp4
-*.jpg
-*.PNG
-*.png.backup
-
-# Keep results/ directory but ignore cache
-results/*.mat
-results/.cache
-
-# Documentation build artifacts
-docs/_build/
-*.pdf.backup
