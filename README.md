@@ -103,6 +103,57 @@ side by side intentionally: `callCompFilter` is what `main.c` currently
 calls, while `callKF` implements a fixed-gain roll/pitch Kalman filter
 behind the identical interface for direct comparison.
 
+## MATLAB controller simulation
+
+The standalone [simulation](simulation/README.md) lives entirely in
+`simulation/`, separate from the embedded firmware. It compares
+**aggressive and conservative LQR tuning** on the same nonlinear,
+12-state quadrotor model tracking a smooth-start circular trajectory.
+These are simulation results, not hardware flight-test results.
+
+From the repository root in MATLAB (Control System Toolbox required):
+
+```matlab
+run(fullfile('simulation', 'matlab', 'run_controller_comparison.m'))
+```
+
+The run regenerates all five plots in `simulation/results/` and prints
+position RMSE and mean rotor-command deviation from hover. The default
+trajectory has a 2 m radius, a 30 s period, a 2.5 m altitude, and a 5 s
+smooth ramp, simulated for 45 s at a 100 Hz controller rate.
+
+Verified in MATLAB R2024b:
+
+| Metric | Aggressive LQR | Conservative LQR |
+|--------|----------------|------------------|
+| Overall position RMSE | 0.0051 m | 0.0266 m |
+| Mean rotor-command deviation from hover | 11,503.0 rad^2/s^2 | 6,483.1 rad^2/s^2 |
+
+Overall RMSE is averaged over all position coordinates and time samples;
+rotor-command deviation measures control effort, not electrical energy.
+
+### Circle tracking
+
+![Circular trajectory: reference, aggressive LQR, and conservative LQR](simulation/results/xy_tracking_comparison.png)
+
+### Position and attitude
+
+![Position tracking comparison over time](simulation/results/xyz_tracking_comparison.png)
+
+![Roll, pitch, and yaw comparison over time](simulation/results/attitude_comparison.png)
+
+### Control effort and tracking error
+
+![Rotor commands for both LQR tunings](simulation/results/rotor_commands_comparison.png)
+
+![Per-axis position RMSE for both LQR tunings](simulation/results/rmse_summary.png)
+
+MPC and nonlinear MPC design templates are retained as **experimental**
+source files; they are not run by this comparison and are not validated
+LQR-versus-MPC results. See the
+[simulation guide](simulation/README.md) for file layout, metric
+definitions, dependencies, and limitations.
+
 ## Testing
 
 `IMU_KF.c` (attitude estimation) and `PID.c` (control + motor mixing) have
