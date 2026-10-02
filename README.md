@@ -14,6 +14,8 @@ Cortex-M4.
 ![license](https://img.shields.io/badge/license-GPLv3-informational)
 ![tests](https://github.com/lgitrt/DroneController/actions/workflows/tests.yml/badge.svg)
 
+![CAD assembly of the quadrotor frame](images/drone-cad-assembly.png)
+
 ---
 
 ## Why this project
@@ -61,6 +63,16 @@ motor speed, running under a hard 1 ms control-loop budget.
 | IMU       | MPU6050                      | 3-axis accelerometer + gyroscope (I2C)     |
 | RC input  | 4× PWM, input-capture timers | Roll / pitch / yaw / throttle from receiver |
 | Actuators | 4× ESC, PWM output           | "+"-configuration quadrotor motor speed control |
+
+The schematic and PCB below are from the custom sensor/IO carrier board
+for this airframe (IMU, ultrasonic rangefinder, ESP32 wireless link, and
+the PWM breakout to the flight-controller MCU); the firmware in this
+repo currently drives the core IMU + RC + ESC path described above.
+
+<p>
+  <img src="images/electronics-schematic.png" alt="Flight controller carrier board schematic" width="49%">
+  <img src="images/pcb-layout.png" alt="Flight controller carrier board PCB layout" width="49%">
+</p>
 
 ## Firmware architecture
 
@@ -134,6 +146,8 @@ both implemented and unit-tested, but only the complementary filter has
 been flown. Treat the gyro-offset constants and PID gains in
 [`PID.h`](Core/Inc/PID.h) as airframe-specific starting points, not
 general-purpose defaults.
+
+![Bench test rig, tethered for safety during attitude-control tuning](images/drone-test-rig.jpg)
 
 ## Author
 
