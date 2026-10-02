@@ -5,7 +5,9 @@ quadrotor plant. Compare a perfect-state baseline, noisy sensors with
 an extended Kalman filter, and noisy sensors plus wind/motor lag.
 The embedded firmware is unchanged.
 
-The [equations and state-space guide](MODEL_AND_CONTROL.md) documents
+The [main README](../README.md#simulation-equations-and-state-space-models)
+includes the plant, controller, and estimator equations inline.
+The [detailed equations and state-space guide](MODEL_AND_CONTROL.md) documents
 the plant, motor mixer, LQR, constrained MPC, cascaded PID, sensor
 measurements, and 15-state navigation EKF, including local transition
 and measurement matrices.
@@ -23,8 +25,9 @@ run(fullfile('simulation', 'matlab', 'run_controller_comparison.m'))
 ```
 
 The entry point clears the workspace and closes existing figures.
-It runs nine 45 s simulations and exports **25 high-resolution PNGs**
-in `results/ideal/`, `results/sensors/`, and `results/robustness/`.
+It runs nine 45 s simulations and exports **six high-resolution PNGs**:
+two sensor-case plots and four robustness plots. The ideal case remains
+in the numerical results without a separate published figure gallery.
 It writes [metrics.csv](results/metrics.csv) with nine controller/scenario
 rows. Full truth, estimated states, sampled IMU/aiding measurements,
 biases, covariance diagonals, and controller diagnostics are retained
@@ -37,7 +40,7 @@ out = comparisons(2).outputs{2};
 plot(out.t, out.XEstimated(1,:) - out.X(1,:))
 ```
 
-To run both MATLAB test files:
+To run the MATLAB regression suite:
 
 ```matlab
 results = runtests(fullfile('simulation', 'tests'));
@@ -49,6 +52,38 @@ scaling and active constraints, infeasible solver reporting, IMU frame
 conventions and gravity, noise statistics and aiding sample rates, EKF
 covariance/bias correction, PID hover/mixing and anti-windup, repeatable
 matched noise sequences, and complete noisy and disturbed comparisons.
+Publication tests also check the exact six-figure selection, rejection
+of unknown figure names, and metrics-only operation without creating
+figures or directories.
+
+To reproduce the three-seed numerical audit without generating plots:
+
+```matlab
+addpath(fullfile('simulation', 'matlab'));
+report = validateResults(20261002:20261004);
+```
+
+This runs 18 sensed/disturbed comparisons using the same
+[experiment configuration](matlab/comparisonConfiguration.m) as the
+plot runner and writes [validation.csv](results/validation.csv).
+It independently recomputes Euclidean RMS and checks finite states,
+rotor command/applied bounds, command rates, final EKF covariance
+positive semidefiniteness, and successful MPC solves.
+
+Optional full diagnostic galleries can be regenerated **after** the main
+run without repeating the simulations:
+
+```matlab
+for i = 1:numel(comparisons)
+    directory = fullfile('simulation', 'results', 'local', cfg.scenarios(i).slug);
+    plotComparison(comparisons(i).outputs, cfg.p, directory, cfg.traj.rampTime, {'all'});
+end
+```
+
+The local directory is ignored by Git. Omitting the final selection
+argument also exports all applicable plots; passing `{}` computes only
+metrics. The [publication policy](matlab/comparisonPlotSelection.m)
+defines the six images committed to the repository.
 
 ## Controllers and comparison fairness
 
@@ -75,7 +110,7 @@ The ideal baseline explicitly bypasses the estimator.
 PID does not have the same quadratic objective as LQR/MPC: it also has
 acceleration feedforward and integral action. The chosen PID gains are
 transparent starting points, not a claim of optimal tuning.
-Neither controller prediction model explicitly includes motor lag or
+Neither LQR nor MPC's design model explicitly includes motor lag or
 wind. The IMU nevertheless measures the actual resulting acceleration,
 as a physical accelerometer would.
 
@@ -158,10 +193,45 @@ In the last case peak distances are **13.04 cm LQR, 13.08 cm MPC,
 for all three controllers; attitude-estimation RMS vector magnitude is
 0.31-0.44 deg across the sensed runs. Initial transients are included.
 
-These are one deterministic noise realization, not Monte Carlo confidence
-intervals, a universal controller ranking, or verified flight accuracy.
+The figures and table use one deterministic noise realization.
 The small ideal errors depend on perfect state feedback, accurate
 parameters, a gentle reference, and feedforward/preview.
+
+### Interpretation and seed sensitivity
+
+MPC's lower **whole-run** RMS should not be read as better wind rejection
+in every axis. Disturbed LQR/MPC x RMSE is 3.95/3.95 cm, y RMSE is
+2.98/3.03 cm, and circle-only RMS is 5.32/5.34 cm. Vertical RMSE is
+2.68/1.42 cm. Startup/vertical behavior accounts for the principal
+whole-run benefit, consistent with MPC's reference preview. The
+circle-only interval starts at 5 s and still includes settling and wind.
+
+The three-seed audit uses seeds `20261002`-`20261004`, retaining the same
+noise/bias innovation sequence across controllers for each seed:
+
+| Scenario/controller | Whole-run 3D RMS range | Wind-window RMS, 12-28 s | Recovery RMS, 32-45 s |
+|---------------------|------------------------|-------------------------|----------------------|
+| Sensors / LQR | 2.24-3.31 cm | 1.81-2.45 cm | 1.84-2.15 cm |
+| Sensors / MPC | 2.04-2.45 cm | 1.81-2.48 cm | 1.84-2.15 cm |
+| Sensors / PID | 2.34-3.07 cm | 2.25-2.95 cm | 2.16-2.32 cm |
+| Wind + lag / LQR | 4.61-5.63 cm | 6.73-7.96 cm | 1.90-2.22 cm |
+| Wind + lag / MPC | 4.28-5.17 cm | 6.73-8.01 cm | 1.90-2.20 cm |
+| Wind + lag / PID | 9.80-11.39 cm | 13.85-15.49 cm | 5.50-6.00 cm |
+
+The sensor-only rows use the same time windows but contain **no wind**.
+PID's larger wind-window and recovery errors are consistent with its
+current cascade tuning and integral recovery; no gains were changed to
+manufacture a ranking. PID has different feedforward/integral structure,
+so this is not a matched-objective optimal-controller contest.
+
+All 18 audited runs have **zero amplitude- or rate-limited samples**.
+Motor saturation/windup does not explain the default PID results, and
+these runs do not prove MPC's constraint advantage. Dedicated tests
+exercise constraints and anti-windup. Maximum roll/pitch is 4.71 degrees
+across the audit, consistent with a near-hover model. All numerical
+checks passed, but this small seed sensitivity check is not a confidence
+interval, an extensive Monte Carlo study, or verified flight accuracy.
+The EKF covariance approximation is not independently consistency-certified.
 
 [trackingMetrics.m](matlab/trackingMetrics.m) separately reports:
 
@@ -172,43 +242,26 @@ parameters, a gentle reference, and feedforward/preview.
 - Host controller timing, excluding the 200 Hz EKF and plant simulation.
   It is not a hardware real-time guarantee.
 
-## Perfect-state baseline plots
+## Six published comparison plots
 
-![Ideal circle and zoom](results/ideal/xy_tracking_comparison.png)
-![Ideal position and signed errors](results/ideal/xyz_tracking_comparison.png)
-![Ideal attitude and signed errors](results/ideal/attitude_comparison.png)
-![Ideal rotor commands and applied inputs](results/ideal/rotor_commands_comparison.png)
-![Ideal metrics](results/ideal/rmse_summary.png)
-![Ideal error magnitudes](results/ideal/tracking_error_comparison.png)
-![Ideal diagnostics](results/ideal/diagnostics.png)
+### Noisy sensors and EKF
 
-## Noisy sensors and EKF plots
-
-![Sensed circle and zoom](results/sensors/xy_tracking_comparison.png)
-![Sensed position and signed errors](results/sensors/xyz_tracking_comparison.png)
-![Sensed attitude and signed errors](results/sensors/attitude_comparison.png)
-![Sensed rotor commands and applied inputs](results/sensors/rotor_commands_comparison.png)
 ![Sensed metrics](results/sensors/rmse_summary.png)
-![Sensed error magnitudes](results/sensors/tracking_error_comparison.png)
-![Sensed diagnostics](results/sensors/diagnostics.png)
-![State estimation errors, distinct from tracking errors](results/sensors/estimation_errors.png)
 ![Raw body accelerometer and gyro, representative MPC run](results/sensors/imu_measurements.png)
 
-## Wind, motor lag, and noisy sensors plots
+### Wind, motor lag, and noisy sensors
 
 ![Disturbed circle and zoom](results/robustness/xy_tracking_comparison.png)
-![Disturbed position and signed errors](results/robustness/xyz_tracking_comparison.png)
-![Disturbed attitude and signed errors](results/robustness/attitude_comparison.png)
-![Disturbed rotor commands and applied inputs](results/robustness/rotor_commands_comparison.png)
 ![Disturbed metrics](results/robustness/rmse_summary.png)
 ![Disturbed error magnitudes](results/robustness/tracking_error_comparison.png)
-![Disturbed diagnostics](results/robustness/diagnostics.png)
 ![Disturbed state estimation errors](results/robustness/estimation_errors.png)
-![Disturbed body accelerometer and gyro, representative MPC run](results/robustness/imu_measurements.png)
 
 ## Source entry points
 
 - [run_controller_comparison.m](matlab/run_controller_comparison.m)
+- [comparisonConfiguration.m](matlab/comparisonConfiguration.m),
+  [comparisonPlotSelection.m](matlab/comparisonPlotSelection.m),
+  [validateResults.m](matlab/validateResults.m)
 - [designLQR.m](matlab/designLQR.m), [designMPC_Linear.m](matlab/designMPC_Linear.m),
   [designPID.m](matlab/designPID.m), [pidControl.m](matlab/pidControl.m)
 - [sensorParameters.m](matlab/sensorParameters.m), [sampleSensors.m](matlab/sampleSensors.m)
@@ -218,7 +271,8 @@ parameters, a gentle reference, and feedforward/preview.
 - [simulateClosedLoop.m](matlab/simulateClosedLoop.m),
   [comparisonScenarios.m](matlab/comparisonScenarios.m),
   [plotComparison.m](matlab/plotComparison.m)
-- [testControllers.m](tests/testControllers.m), [testSensorsAndPID.m](tests/testSensorsAndPID.m)
+- [testControllers.m](tests/testControllers.m), [testSensorsAndPID.m](tests/testSensorsAndPID.m),
+  [testResultPublication.m](tests/testResultPublication.m)
 
 The separate [nonlinear MPC template](matlab/designNMPC.m) remains
 experimental; the comparison uses tested **linear MPC**.

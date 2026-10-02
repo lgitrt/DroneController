@@ -139,84 +139,282 @@ error**, not the smaller coordinate-averaged metric from the old plots:
 | Noisy sensors + EKF | 3.31 cm | 2.45 cm | 3.07 cm |
 | Sensors + wind + 40 ms motor lag | 5.63 cm | 5.17 cm | 11.39 cm |
 
-The excellent ideal tracking is conditional on perfect state feedback,
-a slow trajectory, and accurate model parameters. The sensor experiments
-use the same estimator/noise configuration and matched random sequences
-for all controllers, with no truth-state feedback. Disturbed peak errors
-are 13.04 cm LQR, 13.08 cm MPC, and 30.06 cm PID. These results are a
-single reproducible noise realization, not a universal controller ranking.
+### What the results actually show
 
-The [equations and state-space models](simulation/MODEL_AND_CONTROL.md)
-derive the plant, mixer, LQR Riccati equation, MPC QP, PID controller
-state realization, sensor measurements, and EKF transition/measurement
-matrices with Joseph-form covariance updates.
+- **Ideal accuracy is conditional.** Perfect feedback, shared plant/model
+  parameters, slow motion, and feedforward/preview explain the small errors.
+  These are not measured flight accuracies.
+- **MPC is not uniformly better at wind rejection.** In the disturbed run,
+  LQR/MPC horizontal axis RMSEs are almost identical (x: 3.95/3.95 cm;
+  y: 2.98/3.03 cm). Their circle-only 3D RMS is 5.32/5.34 cm.
+  MPC's whole-run benefit is principally startup/vertical tracking
+  (z RMSE: 2.68 cm LQR versus 1.42 cm MPC), consistent with its preview.
+  Circle-only means `t >= 5 s`, not a separately settled steady-state run.
+- **PID depends on the chosen gains.** Its disturbed peak is 30.06 cm,
+  versus 13.04/13.08 cm for LQR/MPC. The audit also shows larger errors
+  during wind and slower post-wind recovery with this tuning. This is
+  consistent with the current cascade bandwidth and integral recovery,
+  not evidence that PID is inherently inferior.
+- **No actuator limits activate in these default runs.** The differences
+  are not caused by motor saturation or windup, and the plots do not
+  demonstrate MPC's constraint advantage. Active constraints and PID
+  anti-windup are exercised separately by regression tests.
+- **Sensing sets a centimetre-scale floor under the assumptions.**
+  Position-estimation RMS is about 1.79 cm for all three controllers.
+  RTK fixed-solution accuracy and calibrated MEMS noise are assumed, not
+  measured specifications of the physical drone.
 
-### Ideal baseline: full comparison
+The table and six figures use seed `20261002`. A separate **three-seed,
+18-run sensitivity audit** recomputes RMS independently and checks finite
+states, rotor bounds, command rates, final EKF covariance, and every MPC
+solve. It found maximum roll/pitch below 4.71 degrees, consistent with a
+near-hover controller model. Ranges across seeds `20261002`-`20261004`:
 
-![Ideal circle tracking with a zoomed detail](simulation/results/ideal/xy_tracking_comparison.png)
+| Disturbed case | Whole-run 3D RMS | Wind window, 12-28 s | Recovery, 32-45 s |
+|----------------|------------------|---------------------|------------------|
+| LQR | 4.61-5.63 cm | 6.73-7.96 cm | 1.90-2.22 cm |
+| MPC | 4.28-5.17 cm | 6.73-8.01 cm | 1.90-2.20 cm |
+| PID | 9.80-11.39 cm | 13.85-15.49 cm | 5.50-6.00 cm |
 
-![Ideal position tracking and signed errors in centimetres](simulation/results/ideal/xyz_tracking_comparison.png)
+This small seed check is not a confidence interval or a broad Monte Carlo
+study. Exact results are in [metrics.csv](simulation/results/metrics.csv)
+and [validation.csv](simulation/results/validation.csv). Wind is a
+repeatable injected force, not calibrated aerodynamics. Sensor latency,
+vibration, magnetic interference, RTK loss, drag, and ground contact are
+not modeled. Host controller timings exclude EKF/plant integration and
+do not establish an embedded real-time deadline.
 
-![Ideal attitude tracking and signed errors](simulation/results/ideal/attitude_comparison.png)
+### Six key comparison figures
 
-![Ideal rotor commands and applied inputs](simulation/results/ideal/rotor_commands_comparison.png)
+The default run retains only these six high-resolution plots. The ideal
+baseline remains in the numerical table; optional full diagnostics can
+be generated locally using the [simulation guide](simulation/README.md).
 
-![Ideal per-axis and 3D tracking metrics](simulation/results/ideal/rmse_summary.png)
-
-![Ideal 3D and horizontal error magnitudes](simulation/results/ideal/tracking_error_comparison.png)
-
-![Ideal scenario, input limits, and MPC solver diagnostics](simulation/results/ideal/diagnostics.png)
-
-### Noisy sensors and EKF: full comparison
-
-![Sensed circle tracking with a zoomed detail](simulation/results/sensors/xy_tracking_comparison.png)
-
-![Sensed position tracking and signed errors](simulation/results/sensors/xyz_tracking_comparison.png)
-
-![Sensed attitude tracking and signed errors](simulation/results/sensors/attitude_comparison.png)
-
-![Sensed rotor commands and applied inputs](simulation/results/sensors/rotor_commands_comparison.png)
+**Noisy sensors: per-axis and 3D tracking errors**
 
 ![Sensed tracking metrics for LQR, MPC, and PID](simulation/results/sensors/rmse_summary.png)
 
-![Sensed error magnitudes](simulation/results/sensors/tracking_error_comparison.png)
-
-![Sensed controller diagnostics](simulation/results/sensors/diagnostics.png)
-
-![EKF position and attitude estimation errors](simulation/results/sensors/estimation_errors.png)
+**The simulated IMU: body-frame specific force and angular velocity**
 
 ![Noisy body-frame accelerometer and gyro with labelled truth](simulation/results/sensors/imu_measurements.png)
 
-### Wind, motor lag, and noisy sensors: full comparison
-
-The repeatable force acts between 12 and 28 s. This is a simplified
-robustness test, not a calibrated aerodynamic wind model.
+**Wind and motor lag: circle tracking with a zoomed error detail**
 
 ![Disturbed circle tracking with a zoomed detail](simulation/results/robustness/xy_tracking_comparison.png)
 
-![Disturbed position tracking and signed errors in centimetres](simulation/results/robustness/xyz_tracking_comparison.png)
-
-![Disturbed attitude tracking and signed errors](simulation/results/robustness/attitude_comparison.png)
-
-![Disturbed rotor commands and lagged applied inputs](simulation/results/robustness/rotor_commands_comparison.png)
+**Wind and motor lag: error summary and evolution**
 
 ![Disturbed per-axis and 3D tracking metrics](simulation/results/robustness/rmse_summary.png)
 
 ![Disturbed 3D and horizontal error magnitudes](simulation/results/robustness/tracking_error_comparison.png)
 
-![Injected force, input limits, and MPC solver diagnostics](simulation/results/robustness/diagnostics.png)
+**Estimator errors, distinct from trajectory-tracking errors**
 
 ![Disturbed EKF estimation errors](simulation/results/robustness/estimation_errors.png)
 
-![Disturbed noisy body-frame IMU measurements](simulation/results/robustness/imu_measurements.png)
+### Simulation equations and state-space models
 
-All figures use consistent colours and line styles, external legends,
-zoomed/error panels, and high-resolution exports. Exact metrics are in
-[metrics.csv](simulation/results/metrics.csv). See the
-[simulation guide](simulation/README.md) for all 25 plots, sensor noise
-assumptions, PID gains, test commands, and limitations. The separate
-nonlinear MPC template remains experimental; linear MPC, PID, and the
-aided-IMU EKF are implemented and tested.
+These equations describe the MATLAB simulation, not a replacement for
+the embedded firmware's attitude filters. The
+[full derivation and gain tables](simulation/MODEL_AND_CONTROL.md)
+provide implementation details. Positions are metres, angles radians,
+and rotor inputs **squared angular speeds**, not PWM or thrust.
+
+#### Nonlinear dynamics and standard plus-frame mixing
+
+$$
+x=[r^T,\eta^T,v^T,\dot\eta^T]^T,\quad
+\eta=(\phi,\theta,\psi)^T,\quad u_i=\omega_i^2,\quad
+R_b^n=R_z(\psi)R_y(\theta)R_x(\phi).
+$$
+
+Body angular velocity is $\Omega=E\dot\eta$, where
+
+$$
+E=\begin{bmatrix}
+1&0&-\sin\theta\\
+0&\cos\phi&\sin\phi\cos\theta\\
+0&-\sin\phi&\cos\phi\cos\theta
+\end{bmatrix},\qquad
+\begin{bmatrix}T\\\tau_x\\\tau_y\\\tau_z\end{bmatrix}
+=\underbrace{\begin{bmatrix}
+k_t&k_t&k_t&k_t\\lk_t&0&-lk_t&0\\
+0&lk_t&0&-lk_t\\d&-d&d&-d
+\end{bmatrix}}_{M}u.
+$$
+
+$$
+\dot r=v,\qquad
+\dot v=\frac{T}{m}R_b^ne_3-ge_3+\frac{F_w}{m},\qquad
+\dot\Omega=I^{-1}[\tau-\Omega\times(I\Omega)],\qquad
+\ddot\eta=E^{-1}(\dot\Omega-\dot E\dot\eta).
+$$
+
+Here $e_3=(0,0,1)^T$, $I=\operatorname{diag}(I_x,I_y,I_z)$.
+RK4 integrates the plant every 5 ms. The disturbed scenario adds
+$\dot u_{\rm applied}=(u_{\rm commanded}-u_{\rm applied})/0.04$.
+All controllers share $0\le u_i\le u_{\max}$ and
+$|u_{i,k}-u_{i,k-1}|\le0.2u_h$, with $u_h=mg/(4k_t)$.
+
+#### Hover model shared by LQR and MPC
+
+With $\delta u=u-u_h\mathbf1$, the continuous state-space model is
+$(A,B,C,D)=(A,B,I_{12},0)$:
+
+$$
+A=\begin{bmatrix}0&0&I_3&0\\0&0&0&I_3\\0&G&0&0\\0&0&0&0\end{bmatrix},
+\quad G=\begin{bmatrix}0&g&0\\-g&0&0\\0&0&0\end{bmatrix},\quad
+B=\begin{bmatrix}0_{6\times4}\\e_3M_{1,:}/m\\I^{-1}M_{2:4,:}\end{bmatrix}.
+$$
+
+Each zero in $A$ is a $3\times3$ block. Exact zero-order hold gives
+
+$$
+A_d=e^{AT_s},\quad B_d=\int_0^{T_s}e^{At}B\,dt,\quad
+x_{k+1}=A_dx_k+B_d\delta u_k,\qquad T_s=0.05\ {\rm s}.
+$$
+
+#### LQR
+
+$$
+Q=\operatorname{diag}(40,40,60,6,6,3,2,2,3,0.3,0.3,0.2),\quad R_u=10^{-10}I_4,
+$$
+
+$$
+P=A_d^TPA_d+Q-A_d^TPB_d(R_u+B_d^TPB_d)^{-1}B_d^TPA_d,\quad
+K=(R_u+B_d^TPB_d)^{-1}B_d^TPA_d,
+$$
+
+$$
+u_k=u_h\mathbf1-K(\hat x_k-x_{{\rm ref},k}).
+$$
+
+LQR is static state feedback: its controller realization has $D_c=-K$
+and no internal controller state. For a fixed, unsaturated reference,
+the plant closed-loop matrix is $A_d-B_dK$. The moving reference includes
+velocity and acceleration-derived attitude; the rotor feedforward is hover.
+
+#### Constrained linear MPC
+
+For normalized input $q=(u-u_h\mathbf1)/u_h$, MPC predicts from
+$x_{0|k}=\hat x_k$ using $(A_d,u_hB_d,I_{12},0)$ and solves
+
+$$
+\min_q\sum_{j=1}^{40}
+\left[(x_{j|k}-x_{{\rm ref},k+j})^TQ(x_{j|k}-x_{{\rm ref},k+j})
++q_{j-1|k}^T(u_h^2R_u)q_{j-1|k}\right],
+$$
+
+$$
+x_{j+1|k}=A_dx_{j|k}+u_hB_dq_{j|k},\quad
+-1\le q_i\le(u_{\max}-u_h)/u_h,\quad |\Delta q_i|\le0.2.
+$$
+
+The first 20 moves are optimized; the last is held for the remaining
+prediction horizon. Only the first move is applied. There is no terminal
+Riccati cost or move-rate penalty. Previous bounded command supplies the
+first rate constraint. Built-in estimation is disabled in favor of the
+shared EKF; failed solves stop the simulation. This constrained feedback
+law has no single global LTI controller realization.
+
+#### Cascaded PID and its controller state
+
+Position/velocity errors are $e_r=r_{\rm ref}-\hat r$,
+$e_v=v_{\rm ref}-\hat v$. Candidate integrals are clipped componentwise:
+
+$$
+\tilde z_r=\operatorname{clip}(z_r+T_se_r,L_r),\quad
+a_c=\operatorname{clip}(a_{\rm ref}+K_p^re_r+K_d^re_v+K_i^r\tilde z_r,L_a).
+$$
+
+$$
+\phi_c=(\sin\psi_r\,a_{c,x}-\cos\psi_r\,a_{c,y})/g,\quad
+\theta_c=(\cos\psi_r\,a_{c,x}+\sin\psi_r\,a_{c,y})/g,\quad\psi_c=\psi_r.
+$$
+
+Roll/pitch targets are bounded to 25 degrees. With
+$e_\eta=\operatorname{wrap}(\eta_c-\hat\eta)$ and previous target $s_k$:
+
+$$
+\tilde z_\eta=\operatorname{clip}(z_\eta+T_se_\eta,L_\eta),\quad
+\dot\eta_c=(\eta_c-s_k)/T_s,\quad
+\alpha_c=K_p^\eta e_\eta+K_d^\eta(\dot\eta_c-\widehat{\dot\eta})
++K_i^\eta\tilde z_\eta,
+$$
+
+$$
+T_c=\frac{m(g+a_{c,z})}{\max(0.5,\cos\hat\phi\cos\hat\theta)},\quad
+\tau_c=I\alpha_c,\quad u_{\rm requested}=M^{-1}[T_c;\tau_c].
+$$
+
+The nine-state controller is $\xi=[z_r;z_\eta;s]$:
+$s_{k+1}=\eta_{c,k}$; integrals accept their candidates unless any motor
+amplitude/rate bound activates, in which case both retain their old
+values. This nonlinear cascade is not globally LTI. An individual
+unsaturated PI-plus-velocity-damping block has
+$A_c=I$, $B_c=[T_sI\ \ 0]$, $C_c=K_i$,
+$D_c=[K_p+T_sK_i\ \ K_d]$. The inner torque model is a near-hover
+approximation, not nonlinear computed-torque control.
+
+#### Sensors and 15-state navigation EKF
+
+The simulated measurement equations are
+
+$$
+f_m=(R_b^n)^T(\dot v+ge_3)+b_a+n_a,\quad
+\Omega_m=E\dot\eta+b_g+n_g,\quad
+z_{\rm GNSS}=[r;v]+n_{\rm GNSS},\quad z_{\rm mag}=(R_b^n)^Tm_n+n_m.
+$$
+
+Biases follow $b_{k+1}=b_k+\sigma_b\sqrt{\Delta t}\epsilon_k$.
+The body accelerometer measures specific force; it reads gravity at rest.
+The gyro measures body rates, not Euler rates.
+
+For $\zeta=[r;v;\eta;b_a;b_g]$, averaged consecutive IMU samples give
+$a=R_b^n(\bar f_m-\hat b_a)-ge_3$ and
+$q_\eta=E^{-1}(\bar\Omega_m-\hat b_g)$. At $\Delta t=0.005$ s:
+
+$$
+\hat r^-=\hat r+\Delta t\hat v+\tfrac12\Delta t^2a,\quad
+\hat v^-=\hat v+\Delta t a,\quad
+\hat\eta^-=\hat\eta+\Delta t q_\eta,\quad \hat b^-=\hat b.
+$$
+
+The local estimator state-space matrices are
+
+$$
+F=\begin{bmatrix}
+I&\Delta tI&\frac12\Delta t^2J_a&-\frac12\Delta t^2R_b^n&0\\
+0&I&\Delta tJ_a&-\Delta tR_b^n&0\\
+0&0&I+\Delta tJ_q&0&-\Delta tE^{-1}\\
+0&0&0&I&0\\0&0&0&0&I
+\end{bmatrix},\quad
+H_{\rm GNSS}=[I_6\ \ 0_{6\times9}],\quad
+H_{\rm mag}=[0_{3\times6}\ \ J_m\ \ 0_{3\times6}].
+$$
+
+Here $J_a=\partial a/\partial\eta$, $J_q=\partial q_\eta/\partial\eta$,
+$J_m=\partial[(R_b^n)^Tm_n]/\partial\eta$ are central-difference
+Jacobians. Configured IMU/bias noise is mapped into process covariance
+$Q_k$; aiding variances define measurement covariance $R_z$:
+
+$$
+P^-=FP^+_{\rm previous}F^T+Q_k,\quad
+L=P^-H^T(HP^-H^T+R_z)^{-1},\quad
+\hat\zeta^+=\hat\zeta^-+L[z-h(\hat\zeta^-)],
+$$
+
+$$
+P^+=(I-LH)P^-(I-LH)^T+LR_zL^T.
+$$
+
+GNSS correction precedes magnetic correction; the latter's Jacobian is
+recomputed. Angles are wrapped and covariance symmetrized. Initialization
+uses noisy GNSS/accelerometer/magnetometer readings, not plant truth.
+All sensed controllers receive
+$\hat x=[\hat r;\hat\eta;\hat v;E^{-1}(\Omega_m-\hat b_g)]$.
+The averaged-input noise covariance is conservative and omits adjacent
+sample correlation; this is not a certified EKF consistency study.
 
 ## Testing
 
