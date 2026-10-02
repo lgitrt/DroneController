@@ -8,6 +8,16 @@ Release/
 # Host-side unit test build output
 tests/build/
 
+# MATLAB / Simulink generated files
+simulation/**/slprj/
+simulation/**/sccprj/
+simulation/**/*.slxc
+simulation/**/*.asv
+simulation/**/*.m~
+simulation/**/codegen/
+simulation/**/*_ert_rtw/
+simulation/**/*_grt_rtw/
+
 # OS / editor cruft
 *.swp
 .DS_Store
