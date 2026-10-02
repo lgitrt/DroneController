@@ -1,4 +1,4 @@
-function [K, A, B] = designLQR(p, varargin)
+function [K, A, B, Q, R] = designLQR(p, varargin)
 %DESIGNLQR Linear-Quadratic-Regulator gain for hover-linearized quadrotor.
 %   [K, A, B] = DESIGNLQR(P) linearizes the quadrotor dynamics about
 %   hover (see QUADROTORLINEARMODEL) and solves the continuous-time LQR
@@ -8,10 +8,12 @@ function [K, A, B] = designLQR(p, varargin)
 %
 %   Optional name-value pair: 'Tuning' can be 'Aggressive' (default),
 %   'Balanced', or 'Conservative' to adjust the position/rate weight
-%   tradeoff.
+%   tradeoff. 'SampleTime' selects discrete-time LQR; its default of
+%   zero preserves the continuous-time design.
 
 p_ = inputParser;
 p_.addParameter('Tuning', 'Aggressive');
+p_.addParameter('SampleTime', 0, @(v) isscalar(v) && isfinite(v) && v >= 0);
 p_.parse(varargin{:});
 tuning = p_.Results.Tuning;
 
@@ -44,6 +46,11 @@ end
 Q = diag([qPos, qAtt, qVel, qRate]);
 R = R_scale * eye(4);
 
-K = lqr(A, B, Q, R);
+if p_.Results.SampleTime > 0
+    sys = c2d(ss(A, B, eye(12), zeros(12,4)), p_.Results.SampleTime, 'zoh');
+    K = dlqr(sys.A, sys.B, Q, R);
+else
+    K = lqr(A, B, Q, R);
+end
 
 end

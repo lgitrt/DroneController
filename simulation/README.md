@@ -1,12 +1,13 @@
-# Quadrotor controller simulation
+# Quadrotor: LQR versus constrained MPC
 
-Standalone MATLAB simulation of aggressive and conservative LQR tuning
-on a nonlinear quadrotor plant. The embedded firmware is unchanged.
+Two controllers track the same smooth circular reference on a shared
+nonlinear rigid-body plant. An ideal baseline and a repeatable wind/motor
+lag experiment are kept separate. The embedded firmware is unchanged.
 
-## Run
+## Run and test
 
-Requires MATLAB and Control System Toolbox (`lqr`). The default
-comparison does not require Simulink or Model Predictive Control Toolbox.
+Requires MATLAB, Control System Toolbox, and Model Predictive Control
+Toolbox. Results were generated in MATLAB R2024b. Simulink is not required.
 
 From the repository root:
 
@@ -14,124 +15,242 @@ From the repository root:
 run(fullfile('simulation', 'matlab', 'run_controller_comparison.m'))
 ```
 
-Alternatively, open this directory in MATLAB:
+The entry point clears the workspace and closes existing figures, runs
+all four simulations, opens fourteen figures, and exports them as
+180 dpi PNGs in `results/ideal/` and `results/robustness/`. It also writes
+[results/metrics.csv](results/metrics.csv). All paths are relative to the
+source location, not the current working directory.
+
+Run the MATLAB regression suite from the repository root:
 
 ```matlab
-addpath('matlab')
-run_controller_comparison
+results = runtests(fullfile('simulation', 'tests', 'testControllers.m'));
+assertSuccess(results);
 ```
 
-The entry point clears the workspace and closes existing figures. It
-runs both controllers, prints metrics, and writes five PNG figures to
-`results/`, relative to this directory regardless of the working directory.
+Tests cover hover, parameter consistency, nonlinear/linear model
+agreement, independent yaw authority, rigid-body kinematics, discrete
+stability, MPC scaling, state reset, active command-rate constraints,
+both full circle experiments, invalid inputs, and infeasible-QP failure
+reporting. No silent switch to LQR is allowed when MPC fails.
 
-## Layout
+## Files
+
+| Source | Purpose |
+|--------|---------|
+| [run_controller_comparison.m](matlab/run_controller_comparison.m) | Matched-cost comparison entry point |
+| [parameters.m](matlab/parameters.m) | Shared physical parameters and rotor bounds |
+| [QuadrotorStateFcn.m](matlab/QuadrotorStateFcn.m) | Nonlinear rigid-body dynamics |
+| [QuadrotorStateJacobianFcn.m](matlab/QuadrotorStateJacobianFcn.m) | Central-difference model Jacobian |
+| [mixingMatrix.m](matlab/mixingMatrix.m) | Collective thrust and body torques |
+| [quadrotorLinearModel.m](matlab/quadrotorLinearModel.m) | Hover-linearized model |
+| [circleTrajectory.m](matlab/circleTrajectory.m) | Smooth reference and attitude/velocity feedforward |
+| [designLQR.m](matlab/designLQR.m) | Continuous or discrete LQR and tuning weights |
+| [designMPC_Linear.m](matlab/designMPC_Linear.m) | Implemented constrained linear MPC |
+| [comparisonScenarios.m](matlab/comparisonScenarios.m) | Repeatable force and motor-lag cases |
+| [simulateClosedLoop.m](matlab/simulateClosedLoop.m) | Shared RK4 plant and controller diagnostics |
+| [trackingMetrics.m](matlab/trackingMetrics.m) | Explicit error and command-effort definitions |
+| [plotComparison.m](matlab/plotComparison.m) | Readable figures with error panels |
+| [testControllers.m](tests/testControllers.m) | MATLAB regression tests |
+| [designNMPC.m](matlab/designNMPC.m) | Unvalidated nonlinear MPC template, not used |
+
+Generated Simulink caches, build files, videos, and unrelated CAD assets
+are excluded. The legacy Simulink model depends on machine-specific CAD
+paths and is not needed for this comparison.
+
+## Plant and model correction
+
+State order:
+`[x y z phi theta psi xdot ydot zdot phidot thetadot psidot]`.
+Positions are in metres, ZYX Euler angles in radians, and states 10:12
+are **Euler angle rates**, not body angular velocities. Inertial z is
+positive upwards. Inputs are four squared rotor speeds in rad^2/s^2.
+
+The dynamics implement:
 
 ```text
-simulation/
-  README.md
-  matlab/
-    run_controller_comparison.m   Comparison entry point
-    parameters.m                  Physical constants and rotor limits
-    circleTrajectory.m            Smooth circular reference and feedforward
-    quadrotorLinearModel.m        Analytical hover linearization
-    designLQR.m                   Aggressive, balanced, conservative gains
-    simulateClosedLoop.m          Nonlinear plant integration (RK4)
-    plotComparison.m              Figures and performance metrics
-    mixingMatrix.m                Thrust/torque to rotor-input mapping
-    QuadrotorStateFcn.m            Nonlinear state derivatives
-    QuadrotorStateJacobianFcn.m    Nonlinear model Jacobian
-    designMPC_Linear.m             Experimental linear MPC template
-    designNMPC.m                   Experimental nonlinear MPC template
-  results/
-    xy_tracking_comparison.png
-    xyz_tracking_comparison.png
-    attitude_comparison.png
-    rotor_commands_comparison.png
-    rmse_summary.png
+position acceleration = R * [0; 0; sum(thrust)] / mass - [0; 0; g]
+I * body angular acceleration = torque - omega x (I * omega)
+body angular velocity = E(phi, theta) * Euler angle rates
 ```
 
-The MATLAB sources and existing comparison plots were copied from the
-original local simulation. Simulink caches, generated build files,
-videos, and unrelated CAD/media assets are deliberately excluded.
-The legacy Simulink model is also excluded: it references CAD geometry
-using absolute paths to the original author's machine and is not needed
-for this standalone comparison.
+The supplied autogenerated plant used yaw signs `[+ + - -]` while the
+controller used `[+ - + -]`. With its roll and pitch mixing rows, the
+former yaw row was their linear combination, leaving only three
+independent virtual inputs. Rather than adopt that erroneous mapping,
+the plant now uses alternating yaw signs and the shared full-rank
+mixing matrix. Finite-difference tests verify that the nonlinear model
+and analytical hover linearization agree; pure yaw does not command
+roll or pitch acceleration. Physical parameters no longer live in
+opaque autogenerated constants.
 
-## Model and controller
+This model correction, discrete control at 20 Hz, and balanced tuning
+mean the new results are not a like-for-like rerun of the old aggressive
+versus conservative 100 Hz experiment.
 
-The state vector is
-`[x y z phi theta psi xdot ydot zdot phidot thetadot psidot]`.
-Positions are in metres; angles are in radians. Each of the four control
-inputs is squared rotor speed in rad^2/s^2.
+## Controller comparison
 
-Both LQR controllers use the same hover-linearized model for gain design
-and the same nonlinear plant for simulation. Inputs are bounded by the
-rotor limits in [parameters.m](matlab/parameters.m). The plant uses ten
-RK4 substeps per control interval.
+Both designs use the same exact zero-order-hold discretization, and the
+same balanced physical state/input penalties:
 
-Default settings in
-[run_controller_comparison.m](matlab/run_controller_comparison.m):
+```text
+Q = diag([40 40 60 6 6 3 2 2 3 0.3 0.3 0.2])
+R = 1e-10 * identity(4)
+```
 
-| Setting | Value |
-|---------|-------|
-| Circle radius | 2 m |
-| Circle period | 30 s |
-| Altitude | 2.5 m |
-| Smooth-start ramp | 5 s |
-| Simulation duration | 45 s |
-| Controller sample time | 0.01 s |
-| Initial state | All zeros |
+**LQR:** discrete infinite-horizon state feedback around hover,
+`u = uHover - K * (state - currentReference)`. It receives current
+position, velocity, attitude, and angle-rate references. It has no
+explicit future trajectory preview or integral disturbance estimator.
 
-Change the trajectory in the entry point and the tuning weights in
-[designLQR.m](matlab/designLQR.m). Keep physical constants consistent
-with the nonlinear model, which contains its own fixed coefficients.
+**MPC:** finite-horizon quadratic optimization of the hover-linearized
+model. Prediction horizon is 40 samples (2 s); control horizon is 20
+samples (1 s), with the final move held for the remaining prediction
+interval. Future full-state reference samples are generated from the
+same known trajectory. The input is normalized as
+`v = (u - uHover) / uHover`; weights are scaled so the physical Q/R
+penalties match LQR. Exact ZOH discretization replaces the old Euler
+approximation. The MPC state is an `mpcstate` object whose plant state
+is refreshed from the true nonlinear state; there is no hidden Kalman
+or disturbance estimator.
 
-## Comparison plots
+MPC enforces hard physical input bounds and a command step limit of
+`0.2 * uHover` per sample. The same bounds and step limit are applied to
+LQR commands. Constraints are inactive in the default gentle circle,
+but a dedicated test exercises active rate constraints. Solver iteration
+status and update times are recorded for every step. Nonpositive solver
+status, nonfinite inputs, or constraint violations stop the run explicitly.
 
-![Circular trajectory tracking](results/xy_tracking_comparison.png)
+No claim is made that finite-horizon MPC must always outperform LQR:
+reference preview, finite horizon, constraints, and computation differ.
+The continuous-time LQR option and other tuning presets remain available.
 
-![Position tracking](results/xyz_tracking_comparison.png)
+## Experiments
 
-![Attitude tracking](results/attitude_comparison.png)
+| Setting | Shared value |
+|---------|--------------|
+| Circle radius / period | 2 m / 30 s |
+| Altitude / ramp | 2.5 m / 5 s |
+| Duration / controller rate | 45 s / 20 Hz |
+| RK4 integration step | 5 ms (ten substeps per control interval) |
+| Initial state / motor input | All states zero / hover |
+| State measurements | Perfect, instantaneous |
+| Input bounds | 0 to rated maximum squared rotor speed |
+| Command step bound | 20% of hover per sample |
 
-![Rotor commands](results/rotor_commands_comparison.png)
+The ideal case has no external force or actuator lag. The robustness
+case adds **40 ms first-order lag in squared rotor input** and an
+unmeasured inertial force between 12 and 28 s:
 
-![Per-axis position RMSE](results/rmse_summary.png)
+```text
+s(t) = sin(pi * clamp((t - 12) / 16, 0, 1))^2
+F(t) = s(t) * [0.6 + 0.2*sin(0.8*t);
+              -0.4 + 0.15*cos(0.6*t);
+               0.2] N
+```
 
-### Metrics
+This is a deterministic force-injection test, not a calibrated wind
+speed/aerodynamics model. Neither controller models this force or lag.
+The force and lag are identical for both controllers. There is still no
+sensor noise, state-estimation error, communications delay, ground
+contact, or aerodynamic drag model. Zero initial altitude is a coordinate
+origin in free flight, not a simulated takeoff from physical ground.
 
-The reorganized comparison was rerun in MATLAB R2024b:
+## Why the ideal errors are small
 
-| Metric | Aggressive LQR | Conservative LQR |
-|--------|----------------|------------------|
-| Overall position RMSE | 0.0051 m | 0.0266 m |
-| X-axis RMSE | 0.0008 m | 0.0012 m |
-| Y-axis RMSE | 0.0006 m | 0.0011 m |
-| Z-axis RMSE | 0.0088 m | 0.0461 m |
-| Mean control effort | 11,503.0 rad^2/s^2 | 6,483.1 rad^2/s^2 |
+The circle is slow, the start is smooth, state feedback is perfect,
+and the design and plant share physical parameters. LQR receives
+velocity/attitude feedforward, and MPC additionally knows the next 2 s
+of the path. Millimetre-level ideal results are therefore possible and
+must not be presented as flight accuracy. The wind/lag case exposes
+centimetre-scale errors without changing the plot data or hiding transients.
 
-[plotComparison.m](matlab/plotComparison.m) reports:
+The old "overall RMSE" averaged over coordinates as well as time.
+It is smaller than the RMS Euclidean position error by `sqrt(3)`.
+The new summary emphasizes **3D RMS distance**, reports startup and
+circle-only metrics separately, and retains the coordinate average in
+the CSV with an explicit name.
 
-- **Per-axis RMSE:** square root of the mean squared position error for
-  each axis over the full run, including the initial ramp.
-- **Overall RMSE:** square root of the mean squared error over all three
-  position coordinates and all time samples. This is not the RMS
-  Euclidean distance, which is larger by a factor of `sqrt(3)`.
-- **Mean control effort:** mean Euclidean norm of the four rotor-command
-  deviations from hover, in rad^2/s^2. This is an input-deviation metric,
-  not a measurement of electrical energy or power.
+## Verified metrics
 
-## MPC status and limitations
+| Experiment | Controller | 3D RMS [cm] | Circle RMS [cm] | Peak [cm] | Mean command deviation [rad^2/s^2] |
+|------------|------------|-------------|-----------------|-----------|------------------------------------|
+| Ideal | LQR | 1.7805 | 0.4672 | 7.5245 | 4602.9 |
+| Ideal | MPC | 0.2717 | 0.0884 | 1.2917 | 3961.4 |
+| Wind + lag | LQR | 4.6153 | 4.5301 | 12.6680 | 7686.0 |
+| Wind + lag | MPC | 4.2614 | 4.5139 | 12.6783 | 6981.4 |
 
-[designMPC_Linear.m](matlab/designMPC_Linear.m) and
-[designNMPC.m](matlab/designNMPC.m) are experimental templates requiring
-Model Predictive Control Toolbox. They are not invoked by the default
-entry point. Their closed-loop integration and solver behaviour still
-need validation; the included figures compare **two LQR tunings**, not
-LQR against MPC.
+MPC improves the ideal startup transient. Under wind, horizontal
+errors and peak 3D errors are very similar; MPC is not tuned to
+artificially win the robustness experiment.
 
-The default experiment assumes perfect state feedback, no wind, no
-sensor noise, and no actuator delay. LQR design uses a small-angle hover
-linearization. These results are not hardware validation and the gains
-should not be deployed to a real airframe without further testing.
+Metric definitions in [trackingMetrics.m](matlab/trackingMetrics.m):
+
+- **3D RMS:** `sqrt(mean(ex^2 + ey^2 + ez^2))`, including every sample.
+- **Circle RMS:** the same calculation over `t >= 5 s`, including wind.
+- **Per-axis RMSE:** `sqrt(mean(e_axis^2))`.
+- **Peak:** maximum Euclidean position error.
+- **Mean command deviation:** mean Euclidean norm of four requested,
+  bounded rotor-input deviations from hover. This is not power or energy.
+- **Host update time:** includes MPC preview generation and optimization,
+  but not plant integration. Cold-start and host-load effects are retained;
+  these measurements do not guarantee a real-time deadline on hardware.
+
+## Ideal baseline plots
+
+### Path and detail
+![Ideal circle with zoomed detail](results/ideal/xy_tracking_comparison.png)
+
+### Position and signed errors
+![Ideal position and error panels](results/ideal/xyz_tracking_comparison.png)
+
+### Attitude and signed errors
+![Ideal attitude and error panels](results/ideal/attitude_comparison.png)
+
+### Commands and applied motor inputs
+![Ideal rotor deviations](results/ideal/rotor_commands_comparison.png)
+
+### Error summary
+![Ideal tracking metrics](results/ideal/rmse_summary.png)
+
+### Error magnitudes
+![Ideal error magnitudes](results/ideal/tracking_error_comparison.png)
+
+### Force, command limits, and solver diagnostics
+![Ideal diagnostics](results/ideal/diagnostics.png)
+
+## Wind and motor lag plots
+
+### Path and detail
+![Disturbed circle with zoomed detail](results/robustness/xy_tracking_comparison.png)
+
+### Position and signed errors
+![Disturbed position and error panels](results/robustness/xyz_tracking_comparison.png)
+
+### Attitude and signed errors
+![Disturbed attitude and error panels](results/robustness/attitude_comparison.png)
+
+### Commands and applied motor inputs
+![Disturbed rotor deviations](results/robustness/rotor_commands_comparison.png)
+
+### Error summary
+![Disturbed tracking metrics](results/robustness/rmse_summary.png)
+
+### Error magnitudes
+![Disturbed error magnitudes](results/robustness/tracking_error_comparison.png)
+
+### Force, command limits, and solver diagnostics
+![Disturbed diagnostics](results/robustness/diagnostics.png)
+
+## Limits and extensions
+
+The controller prediction model is a small-angle hover linearization;
+the plant is nonlinear. This is **linear MPC**, not a completed nonlinear
+MPC implementation. Underactuation does not make quadrotor MPC impossible.
+The separate [designNMPC.m](matlab/designNMPC.m) is only an experimental
+template and is not part of the tested comparison.
+
+For realistic hardware studies, add and validate state estimation,
+sensor noise, aerodynamic disturbances, actuator identification, and
+end-to-end timing. No gains or simulation results here are flight
+certification or authorization to deploy a controller.

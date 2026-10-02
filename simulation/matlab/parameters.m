@@ -13,7 +13,7 @@ function p = parameters()
 %   Input vector (4x1):
 %       u = [u1 u2 u3 u4], ui = omega_i^2 (squared rotor speed, rad^2/s^2)
 %
-%   Values are consistent with DroneParam.mlx / simulink/DroneParam.mlx.
+%   These values are shared by controller design and nonlinear dynamics.
 
 p.m  = 1;              % [kg]      total mass
 p.g  = 9.81;            % [m/s^2]   gravitational acceleration
