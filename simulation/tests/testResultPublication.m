@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function tests = testResultPublication
 tests = functiontests(localfunctions);
 end

@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function filter = initializeNavigationFilter(sample, cfg)
 %INITIALIZENAVIGATIONFILTER Initialize using sensors, not the plant state.
 if ~sample.hasGNSS || ~sample.hasMag

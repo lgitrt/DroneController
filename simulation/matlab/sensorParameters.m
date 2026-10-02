@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function cfg = sensorParameters()
 %SENSORPARAMETERS Representative calibrated MEMS and fixed-solution RTK.
 %   Standard deviations are per sample, not noise spectral densities.

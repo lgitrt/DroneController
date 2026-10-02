@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function state = navigationControllerState(filter, sample)
 %NAVIGATIONCONTROLLERSTATE Convert EKF navigation state to plant ordering.
 [~,E] = attitudeGeometry(filter.x(7:9));

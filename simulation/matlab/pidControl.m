@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [u, memory] = pidControl(controller, memory, state, ref, p, Ts)
 %PIDCONTROL Feedforward position PID -> attitude PID -> standard rotor mixer.
 if isempty(memory)

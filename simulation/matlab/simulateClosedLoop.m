@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function out = simulateClosedLoop(p, traj, controller, Ts, tEnd, x0, scenario)
 %SIMULATECLOSEDLOOP Shared plant and limits with ideal or aided-IMU feedback.
 %   U contains requested (bounded) inputs; UApplied contains motor inputs

@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function tests = testControllers
 tests = functiontests(localfunctions);
 end

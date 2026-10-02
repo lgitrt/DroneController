@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function dx = QuadrotorStateFcn(x, u, p)
 %QUADROTORSTATEFCN Rigid-body quadrotor dynamics with ZYX Euler angles.
 %   State rates 10:12 are Euler angle rates, not body angular velocity.

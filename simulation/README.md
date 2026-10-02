@@ -1,16 +1,33 @@
 # Quadrotor: LQR, MPC, PID, and aided-IMU Kalman estimation
 
-Three controllers track the same circular reference on a nonlinear
-quadrotor plant. Compare a perfect-state baseline, noisy sensors with
-an extended Kalman filter, and noisy sensors plus wind/motor lag.
+This simulation asks a practical question: **how well do three different
+controllers fly the same circle?** They control the same simulated drone,
+first with exact motion information, then with noisy sensors, and finally
+with noisy sensors plus wind and slower motor response.
 The embedded firmware is unchanged.
 
 The [main README](../README.md#simulation-equations-and-state-space-models)
-includes the plant, controller, and estimator equations inline.
-The [detailed equations and state-space guide](MODEL_AND_CONTROL.md) documents
-the plant, motor mixer, LQR, constrained MPC, cascaded PID, sensor
-measurements, and 15-state navigation EKF, including local transition
-and measurement matrices.
+explains the main equations in plain language. The
+[technical guide](MODEL_AND_CONTROL.md) keeps the full derivations and
+matrices for readers who want to reproduce the controller/filter design.
+
+## The comparison in plain language
+
+| Part | What it does |
+|------|--------------|
+| LQR: Linear Quadratic Regulator | Turns the current motion error into a correction using precomputed gains. |
+| MPC: Model Predictive Control | Plans motor commands 2 s ahead, respects motor limits, then applies the first move. |
+| PID: Proportional-Integral-Derivative | Corrects present error, accumulated error, and velocity/rate error; position and tilt use separate loops. |
+| IMU: inertial measurement unit | Measures body acceleration-related force and turning rate; noise and offsets cause drift. |
+| RTK-GNSS | Uses satellite positioning with correction data; centimetre accuracy assumes a working fixed RTK solution. |
+| Magnetometer | Measures the magnetic field to help estimate orientation, including heading. |
+| EKF: extended Kalman filter | Predicts motion from the IMU, then corrects it using satellite and magnetic readings. |
+
+A **state** is the list of values describing motion. A **bias** is a
+sensor offset, not a random error in just one reading. **Motor mixing**
+turns lift and turning requests into four motor commands. **Anti-windup**
+prevents PID's accumulated error from building up when motors cannot
+deliver the requested command.
 
 ## Run and test
 
@@ -66,9 +83,9 @@ report = validateResults(20261002:20261004);
 This runs 18 sensed/disturbed comparisons using the same
 [experiment configuration](matlab/comparisonConfiguration.m) as the
 plot runner and writes [validation.csv](results/validation.csv).
-It independently recomputes Euclidean RMS and checks finite states,
-rotor command/applied bounds, command rates, final EKF covariance
-positive semidefiniteness, and successful MPC solves.
+It recomputes the RMS tracking distance independently and checks for
+invalid numbers, commands outside motor limits, commands changing too
+quickly, invalid final filter uncertainty, and failed MPC calculations.
 
 Optional full diagnostic galleries can be regenerated **after** the main
 run without repeating the simulations:
@@ -87,38 +104,40 @@ defines the six images committed to the repository.
 
 ## Controllers and comparison fairness
 
-- **LQR:** balanced discrete state feedback around hover.
-- **MPC:** constrained linear prediction with a 2 s reference preview,
-  1 s control horizon, and the same physical Q/R cost as LQR.
-- **PID:** cascaded position/attitude loops, acceleration feedforward,
-  bounded integrals, conditional-integration anti-windup, and standard
-  plus-configuration physical thrust/torque-to-rotor mixing.
+- **LQR:** corrects position, orientation, velocity, and angle-rate errors
+  using a model designed for small tilts near hover.
+- **MPC:** uses the same model and error/effort priorities as LQR, but
+  looks ahead along the path and plans commands within motor limits.
+- **PID:** uses one loop to request acceleration and another to control
+  tilt. Planned acceleration helps it follow the path; accumulated error
+  helps correct persistent offsets. Motor mixing is for a plus-shaped frame.
 
 All controllers run at 20 Hz and share rotor bounds and a command step
-limit of 20% of hover squared speed per sample. Plant integration and
-IMU/EKF propagation run at 200 Hz. The same estimator design, sensor
+limit of 20% of hover squared speed per sample. The simulated drone,
+IMU, and filter advance at 200 Hz. The same filter design, sensor
 configuration, seed, force, and lag are used for all controllers.
-Each run owns its own filter state and independent random stream seeded
-identically; it does not perturb MATLAB's global random generator.
+Each controller has its own filter, but receives the same sequence of
+random noise/offset changes for a given seed. Actual sensor readings
+still differ because the drones follow slightly different paths.
 
 In sensed experiments **none of the controllers receive the true plant
-state**. MPC's internal estimator is disabled and its plant-state input
-is the shared navigation EKF's reordered estimate. Truth is used only
+state**. MPC's built-in filter is disabled so it uses the same EKF design
+as the others. The exact simulated state ("truth") is used only
 to integrate the plant, synthesize sensors, and score/plot performance.
 The ideal baseline explicitly bypasses the estimator.
 
-PID does not have the same quadratic objective as LQR/MPC: it also has
-acceleration feedforward and integral action. The chosen PID gains are
-transparent starting points, not a claim of optimal tuning.
+PID is not designed using the same error/effort score as LQR/MPC. It
+also uses planned acceleration and accumulated error. Its gains are
+documented starting points, not a claim of the best possible tuning.
 Neither LQR nor MPC's design model explicitly includes motor lag or
 wind. The IMU nevertheless measures the actual resulting acceleration,
 as a physical accelerometer would.
 
-## Sensors: representative calibrated MEMS + RTK fixed solution
+## Sensor assumptions
 
 Chosen in [sensorParameters.m](matlab/sensorParameters.m):
 
-| Sensor/model | Rate | Per-sample one-sigma noise |
+| Sensor/model | Rate | Noise standard deviation per reading |
 |--------------|------|---------------------------|
 | Body accelerometer specific force | 200 Hz | 0.04 m/s^2 per axis |
 | Body gyroscope angular rate | 200 Hz | 0.08 deg/s per axis |
@@ -132,6 +151,10 @@ random walks: 0.001 m/s^2/sqrt(s) and 0.005 deg/s/sqrt(s).
 The local navigation-frame magnetic field is `[20,0,45]` microtesla.
 The simulation seed is `20261002`.
 
+The noise column describes typical random spread, not a hard error
+bound. Biases listed above are added separately. "Random walk" means the
+offset changes a little at each tick rather than remaining constant.
+
 These are **representative simulation assumptions, not measurements
 from the repository's physical MPU6050 or a claimed device calibration**.
 They model white sample noise, residual calibration errors, and bias
@@ -141,20 +164,22 @@ correction-link outages, sensor latency, or timestamp errors.
 Centimetre GNSS accuracy assumes an available, fixed RTK solution; it
 is not ordinary unaided GPS performance.
 
-An IMU alone does not make absolute position or heading observable.
-GNSS position/velocity and a known magnetic field provide aiding.
-The EKF propagates `[position; velocity; Euler angles; accel bias; gyro
-bias]`, initializing from the first noisy fix and approximately
-stationary accel/mag attitude. It does not derive a fake attitude
-measurement from the true angles.
+An IMU alone cannot maintain reliable absolute position or heading:
+small errors build up over time. Satellite position/velocity and a known
+magnetic field help correct that drift. The EKF estimates position,
+velocity, orientation, and accelerometer/gyro offsets (15 values).
+It starts from the first noisy satellite and acceleration/magnetic
+readings, assuming little initial motion. It never uses the exact
+simulated angles as a substitute sensor.
 
 ## Plant and experiments
 
 State order is `[position; Euler angles; velocity; Euler angle rates]`.
-The physical model includes nonlinear rigid-body rotation and thrust;
-angles use ZYX Euler kinematics rather than treating body and Euler
-rates as interchangeable. The full-rank plus-frame mixer has independent
-yaw authority. Physical parameters are shared by controller and plant.
+The physical model includes thrust, gravity, and three-dimensional
+rotation. Turning rates measured in drone axes are converted into
+roll/pitch/yaw rates; they are not assumed to be the same when tilted.
+The plus-frame mixer can control lift, roll, pitch, and yaw independently.
+Controllers and drone model use the same physical parameters.
 See the [model derivation](MODEL_AND_CONTROL.md).
 
 | Setting | Value |
@@ -168,11 +193,11 @@ See the [model derivation](MODEL_AND_CONTROL.md).
 | Sensor case | Noisy IMU + RTK + magnetometer; EKF feedback |
 | Robustness case | Same sensors/EKF + wind + 40 ms motor lag |
 
-The force-injection envelope is
-`sin(pi * clamp((t-12)/16,0,1))^2` between 12 and 28 s, multiplied by
-`[0.6+0.2*sin(0.8*t); -0.4+0.15*cos(0.6*t); 0.2]` N.
-This is a repeatable robustness test, not calibrated wind aerodynamics.
-The 40 ms lag acts on squared rotor input.
+The wind test smoothly applies a changing force from 12 to 28 s, then
+removes it. This is a repeatable disturbance, not a model of measured
+airflow. The exact force formula is documented in
+[comparisonScenarios.m](matlab/comparisonScenarios.m).
+The 40 ms lag delays the response of squared motor speed.
 
 Zero altitude is a free-flight coordinate origin, not physical ground.
 Ground contact, drag, actuator identification, and communications
@@ -180,7 +205,10 @@ delays are not included.
 
 ## Verified results
 
-3D RMS means `sqrt(mean(ex^2 + ey^2 + ez^2))` over the full run:
+**3D RMS error** summarizes distance from the target over the full run,
+giving larger misses more weight. Smaller is better. It combines all
+three directions; it is not the maximum error. In code it is
+`sqrt(mean(ex^2 + ey^2 + ez^2))`.
 
 | Scenario | LQR RMS | MPC RMS | PID RMS |
 |----------|---------|---------|---------|
@@ -190,12 +218,12 @@ delays are not included.
 
 In the last case peak distances are **13.04 cm LQR, 13.08 cm MPC,
 30.06 cm PID**. Position-estimation 3D RMS is approximately **1.79 cm**
-for all three controllers; attitude-estimation RMS vector magnitude is
-0.31-0.44 deg across the sensed runs. Initial transients are included.
+for all three controllers. Combined roll/pitch/yaw estimation RMS is
+0.31-0.44 deg across the sensed runs. Startup errors are included.
 
 The figures and table use one deterministic noise realization.
 The small ideal errors depend on perfect state feedback, accurate
-parameters, a gentle reference, and feedforward/preview.
+parameters, a slow path, and use of planned motion.
 
 ### Interpretation and seed sensitivity
 
@@ -206,8 +234,8 @@ in every axis. Disturbed LQR/MPC x RMSE is 3.95/3.95 cm, y RMSE is
 whole-run benefit, consistent with MPC's reference preview. The
 circle-only interval starts at 5 s and still includes settling and wind.
 
-The three-seed audit uses seeds `20261002`-`20261004`, retaining the same
-noise/bias innovation sequence across controllers for each seed:
+The check uses three random-noise seeds, `20261002`-`20261004`. Each seed
+produces a different noise sequence, matched across controllers:
 
 | Scenario/controller | Whole-run 3D RMS range | Wind-window RMS, 12-28 s | Recovery RMS, 32-45 s |
 |---------------------|------------------------|-------------------------|----------------------|
@@ -220,25 +248,29 @@ noise/bias innovation sequence across controllers for each seed:
 
 The sensor-only rows use the same time windows but contain **no wind**.
 PID's larger wind-window and recovery errors are consistent with its
-current cascade tuning and integral recovery; no gains were changed to
-manufacture a ranking. PID has different feedforward/integral structure,
-so this is not a matched-objective optimal-controller contest.
+current tuning and recovery of its accumulated error; no gains were
+changed to manufacture a ranking. PID uses a different control structure,
+so these results compare the documented designs, not the best possible
+version of each controller.
 
-All 18 audited runs have **zero amplitude- or rate-limited samples**.
-Motor saturation/windup does not explain the default PID results, and
+All 18 checked runs stay **within motor and command-change limits**.
+Motor saturation or excessive integral buildup does not explain the PID results, and
 these runs do not prove MPC's constraint advantage. Dedicated tests
 exercise constraints and anti-windup. Maximum roll/pitch is 4.71 degrees
 across the audit, consistent with a near-hover model. All numerical
-checks passed, but this small seed sensitivity check is not a confidence
-interval, an extensive Monte Carlo study, or verified flight accuracy.
-The EKF covariance approximation is not independently consistency-certified.
+checks passed, but three noise sequences are not enough to establish
+statistical reliability or real-flight accuracy. The filter's estimated
+uncertainty also contains approximations; it has not been proven to
+match actual error in every condition.
 
 [trackingMetrics.m](matlab/trackingMetrics.m) separately reports:
 
 - Whole-run and circle-only (`t >= 5 s`) 3D RMS, per-axis errors, and peaks.
-- Coordinate-averaged RMSE (smaller than 3D RMS by `sqrt(3)`).
-- Command deviation from hover: a norm in rad^2/s^2, not energy.
-- Estimator position RMS and wrapped attitude RMS, scored against truth.
+- A legacy coordinate-averaged RMSE, smaller by `sqrt(3)`; do not confuse
+  it with the plotted 3D RMS.
+- Size of motor-command changes from hover, not electrical energy use.
+- Position/orientation estimation errors, measured against the exact
+  simulated state. Angle differences account for wrapping at a full turn.
 - Host controller timing, excluding the 200 Hz EKF and plant simulation.
   It is not a hardware real-time guarantee.
 
@@ -276,5 +308,6 @@ The EKF covariance approximation is not independently consistency-certified.
 
 The separate [nonlinear MPC template](matlab/designNMPC.m) remains
 experimental; the comparison uses tested **linear MPC**.
-Euler representations exclude near-vertical singularities. This study
+The roll/pitch/yaw representation is not suitable near a 90-degree pitch.
+This study
 does not certify any controller gains or authorize hardware deployment.

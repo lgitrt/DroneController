@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function p = parameters()
 %PARAMETERS Physical and controller-design parameters of the quadrotor.
 %   P = PARAMETERS() returns a struct with the mechanical parameters of

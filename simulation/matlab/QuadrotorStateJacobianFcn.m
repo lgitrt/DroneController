@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [A, B] = QuadrotorStateJacobianFcn(x, u, p)
 %QUADROTORSTATEJACOBIANFCN Central-difference Jacobian of the nonlinear plant.
 if nargin < 3

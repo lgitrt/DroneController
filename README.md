@@ -10,6 +10,11 @@ against the stick/throttle commands, and mixes the result into four ESC
 PWM outputs — all inside a hard real-time 1 kHz control loop on a
 Cortex-M4.
 
+The **IMU** measures acceleration-related force and turning rate.
+**PWM** is a pulse signal sent to each **ESC** (electronic speed controller)
+to command a motor. Roll and pitch mean sideways and forward/backward
+tilt; yaw means turning the heading.
+
 ![mcu](https://img.shields.io/badge/MCU-STM32G431KB-blue)
 ![license](https://img.shields.io/badge/license-GPLv3-informational)
 ![tests](https://github.com/lgitrt/DroneController/actions/workflows/tests.yml/badge.svg)
@@ -109,8 +114,9 @@ The standalone [simulation](simulation/README.md) lives entirely in
 `simulation/`, separate from the embedded firmware. It compares
 **LQR, constrained linear MPC, and cascaded PID with standard motor
 mixing** on the same nonlinear quadrotor plant. Noisy-sensor experiments
-use a **15-state navigation EKF**, not perfect state feedback. These
-are simulation results, not hardware flight-test results.
+use an **extended Kalman filter (EKF)** to estimate motion from noisy
+sensors instead of giving the controllers the exact simulated state.
+These are simulation results, not hardware flight-test results.
 
 From the repository root in MATLAB (Control System Toolbox and Model
 Predictive Control Toolbox required):
@@ -121,17 +127,23 @@ run(fullfile('simulation', 'matlab', 'run_controller_comparison.m'))
 
 The default circle has a 2 m radius, a 30 s period, a 2.5 m altitude,
 and a 5 s smooth ramp. All controllers run at **20 Hz** for 45 s with
-shared rotor/rate limits. A **200 Hz noisy accelerometer/gyro**, **10 Hz
-RTK-GNSS**, and **20 Hz magnetometer** supply the EKF. Residual biases
-and random-walk drift are included. The RTK fixed-solution assumption is
-explicit: this is not centimetre accuracy from ordinary GPS.
+shared limits on motor commands and how quickly they may change.
+A **200 Hz noisy accelerometer/gyro**, **10 Hz RTK-GNSS** (satellite
+position and velocity with correction data), and **20 Hz magnetometer**
+(magnetic-field sensor) supply the EKF. Small sensor offsets and gradual
+drift are included. Centimetre positioning assumes a working RTK fix;
+it is not the accuracy of ordinary GPS.
 
-MPC predicts 2 s ahead; LQR uses current reference feedforward; PID uses
-cascaded position/attitude loops with integral anti-windup and physical
-plus-frame mixing. LQR/MPC share quadratic costs; PID is separately tuned.
+MPC plans 2 s ahead. LQR corrects the current error in position, tilt,
+velocity, and turning rate. PID first decides how to move, then adjusts
+tilt and thrust to do it. Its accumulated error is held when motor limits
+are reached, preventing excessive buildup ("anti-windup"). All three
+produce commands for the same four motors. LQR/MPC use the same error
+and motor-effort priorities; PID is separately tuned.
 
-Verified in MATLAB R2024b; RMS here means the **Euclidean 3D position
-error**, not the smaller coordinate-averaged metric from the old plots:
+Verified in MATLAB R2024b. **3D RMS error** summarizes the drone's distance
+from the target over the run, giving larger misses more weight. Smaller
+is better; it is not the worst-case error.
 
 | Experiment | LQR 3D RMS | MPC 3D RMS | PID 3D RMS |
 |------------|------------|------------|------------|
@@ -142,7 +154,7 @@ error**, not the smaller coordinate-averaged metric from the old plots:
 ### What the results actually show
 
 - **Ideal accuracy is conditional.** Perfect feedback, shared plant/model
-  parameters, slow motion, and feedforward/preview explain the small errors.
+  parameters, slow motion, and use of the planned path explain the small errors.
   These are not measured flight accuracies.
 - **MPC is not uniformly better at wind rejection.** In the disturbed run,
   LQR/MPC horizontal axis RMSEs are almost identical (x: 3.95/3.95 cm;
@@ -153,7 +165,8 @@ error**, not the smaller coordinate-averaged metric from the old plots:
 - **PID depends on the chosen gains.** Its disturbed peak is 30.06 cm,
   versus 13.04/13.08 cm for LQR/MPC. The audit also shows larger errors
   during wind and slower post-wind recovery with this tuning. This is
-  consistent with the current cascade bandwidth and integral recovery,
+  consistent with the response speed and accumulated-error recovery of
+  the current tuning,
   not evidence that PID is inherently inferior.
 - **No actuator limits activate in these default runs.** The differences
   are not caused by motor saturation or windup, and the plots do not
@@ -165,10 +178,11 @@ error**, not the smaller coordinate-averaged metric from the old plots:
   measured specifications of the physical drone.
 
 The table and six figures use seed `20261002`. A separate **three-seed,
-18-run sensitivity audit** recomputes RMS independently and checks finite
-states, rotor bounds, command rates, final EKF covariance, and every MPC
-solve. It found maximum roll/pitch below 4.71 degrees, consistent with a
-near-hover controller model. Ranges across seeds `20261002`-`20261004`:
+18-run check with different sensor-noise sequences** recomputes RMS
+independently and checks for invalid numbers, broken motor limits,
+invalid final filter uncertainty, and failed MPC calculations. Maximum
+roll/pitch stayed below 4.71 degrees, so a controller model designed for
+small tilts is reasonable here. Ranges across seeds `20261002`-`20261004`:
 
 | Disturbed case | Whole-run 3D RMS | Wind window, 12-28 s | Recovery, 32-45 s |
 |----------------|------------------|---------------------|------------------|
@@ -176,8 +190,8 @@ near-hover controller model. Ranges across seeds `20261002`-`20261004`:
 | MPC | 4.28-5.17 cm | 6.73-8.01 cm | 1.90-2.20 cm |
 | PID | 9.80-11.39 cm | 13.85-15.49 cm | 5.50-6.00 cm |
 
-This small seed check is not a confidence interval or a broad Monte Carlo
-study. Exact results are in [metrics.csv](simulation/results/metrics.csv)
+Three noise sequences are a useful repeatability check, not enough to
+establish statistical reliability. Exact results are in [metrics.csv](simulation/results/metrics.csv)
 and [validation.csv](simulation/results/validation.csv). Wind is a
 repeatable injected force, not calibrated aerodynamics. Sensor latency,
 vibration, magnetic interference, RTK loss, drag, and ground contact are
@@ -214,207 +228,184 @@ be generated locally using the [simulation guide](simulation/README.md).
 
 ### Simulation equations and state-space models
 
-These equations describe the MATLAB simulation, not a replacement for
-the embedded firmware's attitude filters. The
-[full derivation and gain tables](simulation/MODEL_AND_CONTROL.md)
-provide implementation details. Positions are metres, angles radians,
-and rotor inputs **squared angular speeds**, not PWM or thrust.
+You do not need to work through a matrix derivation to read the plots.
+The equations below explain the main ideas; the
+[technical guide](simulation/MODEL_AND_CONTROL.md) keeps the full
+matrices, controller gains, and filter uncertainty equations.
+These models describe the MATLAB simulation, not the firmware filters.
 
-#### Nonlinear dynamics and standard plus-frame mixing
+**Reading the notation:** a dot means "change per second"; a hat means
+"estimated from sensors"; `ref` means the desired path; and $k$ is the
+current control step. A **state** is just a list describing the drone:
+position, tilt/heading, velocity, and angle rates. Positions use metres,
+angles use radians in the code, and plot labels show their units.
+
+#### Drone motion: thrust, gravity, and turning
+
+The motors push along the drone's vertical axis. Tilting the drone turns
+some of that thrust into sideways acceleration. Gravity pulls downward,
+and the wind test adds an external force:
 
 $$
-x=[r^T,\eta^T,v^T,\dot\eta^T]^T,\quad
-\eta=(\phi,\theta,\psi)^T,\quad u_i=\omega_i^2,\quad
-R_b^n=R_z(\psi)R_y(\theta)R_x(\phi).
+\dot r=v,\qquad
+m\dot v=T R_b^n e_3-mg e_3+F_w,\qquad
+I\dot\Omega=\tau-\Omega\times(I\Omega).
 $$
 
-Body angular velocity is $\Omega=E\dot\eta$, where
+Here $r$ is position, $v$ velocity, $m$ mass, $g$ gravity, $T$ total
+thrust, and $F_w$ the injected wind force. $e_3$ points upward;
+$R_b^n$ rotates the thrust direction from drone axes into world axes.
+The last equation describes turning: $\tau$ is motor torque, $\Omega$
+the rotation rate measured in drone axes, and $I$ describes resistance
+to turning. The simulator converts these body rates into roll, pitch,
+and yaw rates; they are not interchangeable when tilted.
+
+**Motor mixing** distributes the requested thrust and turning effort
+among four motors in a plus-shaped frame:
 
 $$
-E=\begin{bmatrix}
-1&0&-\sin\theta\\
-0&\cos\phi&\sin\phi\cos\theta\\
-0&-\sin\phi&\cos\phi\cos\theta
-\end{bmatrix},\qquad
 \begin{bmatrix}T\\\tau_x\\\tau_y\\\tau_z\end{bmatrix}
 =\underbrace{\begin{bmatrix}
 k_t&k_t&k_t&k_t\\lk_t&0&-lk_t&0\\
 0&lk_t&0&-lk_t\\d&-d&d&-d
-\end{bmatrix}}_{M}u.
+\end{bmatrix}}_{M}
+\begin{bmatrix}u_1\\u_2\\u_3\\u_4\end{bmatrix},
+\qquad u_i=\omega_i^2.
 $$
 
-$$
-\dot r=v,\qquad
-\dot v=\frac{T}{m}R_b^ne_3-ge_3+\frac{F_w}{m},\qquad
-\dot\Omega=I^{-1}[\tau-\Omega\times(I\Omega)],\qquad
-\ddot\eta=E^{-1}(\dot\Omega-\dot E\dot\eta).
-$$
+Each row says which motors add or subtract effort: all add lift,
+opposite motors control roll/pitch, and alternating spin directions
+control yaw. $l$ is arm length; $k_t$ and $d$ convert squared motor
+speed into thrust and yaw torque. Commands are **squared angular
+speeds**, not PWM. Motor commands and their step-to-step changes are
+limited for all controllers. The wind test adds a 40 ms motor response
+lag instead of assuming an immediate response.
 
-Here $e_3=(0,0,1)^T$, $I=\mathrm{diag}(I_x,I_y,I_z)$.
-RK4 integrates the plant every 5 ms. The disturbed scenario adds
-$\dot u_{\rm applied}=(u_{\rm commanded}-u_{\rm applied})/0.04$.
-All controllers share $0\le u_i\le u_{\max}$ and
-$|u_{i,k}-u_{i,k-1}|\le0.2u_h$, with $u_h=mg/(4k_t)$.
+#### A small-tilt model for LQR and MPC
 
-#### Hover model shared by LQR and MPC
-
-With $\delta u=u-u_h\mathbf1$, the continuous state-space model is
-$(A,B,C,D)=(A,B,I_{12},0)$:
+The simulation uses the full motion equations, but these two controllers
+use a simpler model valid near hover:
 
 $$
-A=\begin{bmatrix}0&0&I_3&0\\0&0&0&I_3\\0&G&0&0\\0&0&0&0\end{bmatrix},
-\quad G=\begin{bmatrix}0&g&0\\-g&0&0\\0&0&0\end{bmatrix},\quad
-B=\begin{bmatrix}0_{6\times4}\\e_3M_{1,:}/m\\I^{-1}M_{2:4,:}\end{bmatrix}.
+x_{k+1}=A_dx_k+B_d(u_k-u_{\rm hover}).
 $$
 
-Each zero in $A$ is a $3\times3$ block. Exact zero-order hold gives
+$x$ is the 12-value state described above. $A_d$ predicts how that state
+changes without changing motor effort; $B_d$ predicts the effect of
+changing effort from hover. $u_{\rm hover}$ contains four equal motor
+commands that balance gravity. The model advances by 0.05 s per step
+(20 Hz). Its exact matrices are in the technical guide.
+
+#### LQR: correct the current error
+
+**Linear Quadratic Regulator (LQR)** uses a precomputed gain matrix $K$
+to turn the estimated state error into a motor correction:
 
 $$
-A_d=e^{AT_s},\quad B_d=\int_0^{T_s}e^{At}B\,dt,\quad
-x_{k+1}=A_dx_k+B_d\delta u_k,\qquad T_s=0.05\ {\rm s}.
+u_k=u_{\rm hover}-K(\hat x_k-x_{{\rm ref},k}).
 $$
 
-#### LQR
+The gain balances tracking errors against motor effort using weights
+called $Q$ and $R_u$. Position errors receive more emphasis than angle-rate
+errors in this setup. LQR itself stores no accumulated error; the sensor
+filter supplies its estimate. The reference includes desired velocity
+and tilt as well as position, but the motor baseline is hover.
+
+#### MPC: plan ahead, then apply one move
+
+**Model Predictive Control (MPC)** tries motor-command sequences against
+the small-tilt model and chooses the one with the lowest score:
 
 $$
-Q=\mathrm{diag}(40,40,60,6,6,3,2,2,3,0.3,0.3,0.2),\quad R_u=10^{-10}I_4,
+J=\sum_{j=1}^{40}
+\left(e_j^TQe_j+\delta u_{j-1}^TR_u\delta u_{j-1}\right).
 $$
 
-$$
-P=A_d^TPA_d+Q-A_d^TPB_d(R_u+B_d^TPB_d)^{-1}B_d^TPA_d,\quad
-K=(R_u+B_d^TPB_d)^{-1}B_d^TPA_d,
-$$
+$e_j$ is the predicted state error at a future step, and $\delta u$ is
+motor effort above or below hover. The first term penalizes missed
+targets; the second penalizes motor effort. LQR and MPC use the same
+weights. MPC looks 40 steps (2 s) ahead, optimizes 20 moves, and holds
+the last move for the rest of the prediction. It applies only the first
+move, then plans again with the next estimate.
+
+Motor bounds and command-change limits are enforced inside this plan.
+The implementation uses normalized commands for numerical scaling,
+which does not change the physical score shown above. A failed
+optimization stops the run rather than silently returning a substitute.
+
+#### PID: position first, tilt second
+
+**Proportional-Integral-Derivative (PID)** combines three corrections:
+current error (P), accumulated error (I), and velocity/rate error (D).
+The position loop requests acceleration:
 
 $$
-u_k=u_h\mathbf1-K(\hat x_k-x_{{\rm ref},k}).
+a_c=a_{\rm ref}+K_p^r(r_{\rm ref}-\hat r)
++K_d^r(v_{\rm ref}-\hat v)+K_i^r z_r.
 $$
 
-LQR is static state feedback: its controller realization has $D_c=-K$
-and no internal controller state. For a fixed, unsaturated reference,
-the plant closed-loop matrix is $A_d-B_dK$. The moving reference includes
-velocity and acceleration-derived attitude; the rotor feedforward is hover.
-
-#### Constrained linear MPC
-
-For normalized input $q=(u-u_h\mathbf1)/u_h$, MPC predicts from
-$x_{0|k}=\hat x_k$ using $(A_d,u_hB_d,I_{12},0)$ and solves
+$a_{\rm ref}$ is the planned path acceleration. $z_r$ is the bounded,
+updated accumulation of position error, helping remove persistent offsets.
+The requested
+acceleration sets a desired tilt; a second PID loop corrects tilt and
+turning rate:
 
 $$
-\min_q\sum_{j=1}^{40}
-\left[(x_{j|k}-x_{{\rm ref},k+j})^TQ(x_{j|k}-x_{{\rm ref},k+j})
-+q_{j-1|k}^T(u_h^2R_u)q_{j-1|k}\right],
-$$
-
-$$
-x_{j+1|k}=A_dx_{j|k}+u_hB_dq_{j|k},\quad
--1\le q_i\le(u_{\max}-u_h)/u_h,\quad |\Delta q_i|\le0.2.
-$$
-
-The first 20 moves are optimized; the last is held for the remaining
-prediction horizon. Only the first move is applied. There is no terminal
-Riccati cost or move-rate penalty. Previous bounded command supplies the
-first rate constraint. Built-in estimation is disabled in favor of the
-shared EKF; failed solves stop the simulation. This constrained feedback
-law has no single global LTI controller realization.
-
-#### Cascaded PID and its controller state
-
-Position/velocity errors are $e_r=r_{\rm ref}-\hat r$,
-$e_v=v_{\rm ref}-\hat v$. Candidate integrals are clipped componentwise:
-
-$$
-\tilde z_r=\mathrm{clip}(z_r+T_se_r,L_r),\quad
-a_c=\mathrm{clip}(a_{\rm ref}+K_p^re_r+K_d^re_v+K_i^r\tilde z_r,L_a).
-$$
-
-$$
-\phi_c=(\sin\psi_r\,a_{c,x}-\cos\psi_r\,a_{c,y})/g,\quad
-\theta_c=(\cos\psi_r\,a_{c,x}+\sin\psi_r\,a_{c,y})/g,\quad\psi_c=\psi_r.
-$$
-
-Roll/pitch targets are bounded to 25 degrees. With
-$e_\eta=\mathrm{wrap}(\eta_c-\hat\eta)$ and previous target $s_k$:
-
-$$
-\tilde z_\eta=\mathrm{clip}(z_\eta+T_se_\eta,L_\eta),\quad
-\dot\eta_c=(\eta_c-s_k)/T_s,\quad
 \alpha_c=K_p^\eta e_\eta+K_d^\eta(\dot\eta_c-\widehat{\dot\eta})
-+K_i^\eta\tilde z_\eta,
++K_i^\eta z_\eta,\qquad
+u_{\rm requested}=M^{-1}\begin{bmatrix}T_c\\I\alpha_c\end{bmatrix}.
 $$
 
-$$
-T_c=\frac{m(g+a_{c,z})}{\max(0.5,\cos\hat\phi\cos\hat\theta)},\quad
-\tau_c=I\alpha_c,\quad u_{\rm requested}=M^{-1}[T_c;\tau_c].
-$$
+$\eta$ means roll, pitch, and yaw; $e_\eta$ is their target-minus-estimate
+error; $z_\eta$ is its bounded, updated accumulation. $T_c$ adjusts lift for the
+requested vertical acceleration and current tilt. The mixer converts
+lift and turning requests into motor commands.
 
-The nine-state controller is $\xi=[z_r;z_\eta;s]$:
-$s_{k+1}=\eta_{c,k}$; integrals accept their candidates unless any motor
-amplitude/rate bound activates, in which case both retain their old
-values. This nonlinear cascade is not globally LTI. An individual
-unsaturated PI-plus-velocity-damping block has
-$A_c=I$, $B_c=[T_sI\ \ 0]$, $C_c=K_i$,
-$D_c=[K_p+T_sK_i\ \ K_d]$. The inner torque model is a near-hover
-approximation, not nonlinear computed-torque control.
+The controller remembers both accumulated errors and the previous tilt
+target. Integrals, acceleration, and tilt targets are bounded. If a motor
+amplitude or command-change limit is hit, both integrals stop accumulating
+for that step. This is a small-tilt cascade, not exact nonlinear control.
 
-#### Sensors and 15-state navigation EKF
+#### Sensors and Kalman filter: predict, then correct
 
-The simulated measurement equations are
-
-$$
-f_m=(R_b^n)^T(\dot v+ge_3)+b_a+n_a,\quad
-\Omega_m=E\dot\eta+b_g+n_g,\quad
-z_{\rm GNSS}=[r;v]+n_{\rm GNSS},\quad z_{\rm mag}=(R_b^n)^Tm_n+n_m.
-$$
-
-Biases follow $b_{k+1}=b_k+\sigma_b\sqrt{\Delta t}\epsilon_k$.
-The body accelerometer measures specific force; it reads gravity at rest.
-The gyro measures body rates, not Euler rates.
-
-For $\zeta=[r;v;\eta;b_a;b_g]$, averaged consecutive IMU samples give
-$a=R_b^n(\bar f_m-\hat b_a)-ge_3$ and
-$q_\eta=E^{-1}(\bar\Omega_m-\hat b_g)$. At $\Delta t=0.005$ s:
+The IMU measures motion in drone axes. Its accelerometer reads
+**specific force**: a stationary level drone reads gravity, while ideal
+free fall reads zero. Its gyro measures body turning rate. Both
+measurements include a small offset ("bias") and random noise:
 
 $$
-\hat r^-=\hat r+\Delta t\hat v+\tfrac12\Delta t^2a,\quad
-\hat v^-=\hat v+\Delta t a,\quad
-\hat\eta^-=\hat\eta+\Delta t q_\eta,\quad \hat b^-=\hat b.
+f_m=(R_b^n)^T(\dot v+ge_3)+b_a+n_a,\qquad
+\Omega_m=\Omega+b_g+n_g.
 $$
 
-The local estimator state-space matrices are
+$b_a,b_g$ are biases and $n_a,n_g$ are noise. Satellite measurements
+provide position/velocity; the magnetometer measures the local magnetic
+field. These help prevent the drift that would occur with an IMU alone.
+
+The **extended Kalman filter (EKF)** repeats two steps:
+
+1. **Predict at 200 Hz:** subtract estimated biases, rotate acceleration
+   into world axes, subtract gravity, then advance position, velocity,
+   and orientation.
+2. **Correct when aiding arrives:** compare satellite/magnetic readings
+   with their predictions and use the difference to adjust the estimate.
+
+The correction has the form
 
 $$
-F=\begin{bmatrix}
-I&\Delta tI&\frac12\Delta t^2J_a&-\frac12\Delta t^2R_b^n&0\\
-0&I&\Delta tJ_a&-\Delta tR_b^n&0\\
-0&0&I+\Delta tJ_q&0&-\Delta tE^{-1}\\
-0&0&0&I&0\\0&0&0&0&I
-\end{bmatrix},\quad
-H_{\rm GNSS}=[I_6\ \ 0_{6\times9}],\quad
-H_{\rm mag}=[0_{3\times6}\ \ J_m\ \ 0_{3\times6}].
+\hat\zeta^+=\hat\zeta^-+L\left(z-h(\hat\zeta^-)\right).
 $$
 
-Here $J_a=\partial a/\partial\eta$, $J_q=\partial q_\eta/\partial\eta$,
-$J_m=\partial[(R_b^n)^Tm_n]/\partial\eta$ are central-difference
-Jacobians. Configured IMU/bias noise is mapped into process covariance
-$Q_k$; aiding variances define measurement covariance $R_z$:
+$\zeta$ lists position, velocity, orientation, and the two sensor biases
+(15 values). The minus/plus signs mean before/after correction. $z$ is
+a sensor reading, $h$ predicts that reading, and $L$ balances trust in
+the prediction against trust in the measurement using their estimated
+uncertainties.
 
-$$
-P^-=FP^+_{\rm previous}F^T+Q_k,\quad
-L=P^-H^T(HP^-H^T+R_z)^{-1},\quad
-\hat\zeta^+=\hat\zeta^-+L[z-h(\hat\zeta^-)],
-$$
-
-$$
-P^+=(I-LH)P^-(I-LH)^T+LR_zL^T.
-$$
-
-GNSS correction precedes magnetic correction; the latter's Jacobian is
-recomputed. Angles are wrapped and covariance symmetrized. Initialization
-uses noisy GNSS/accelerometer/magnetometer readings, not plant truth.
-All sensed controllers receive
-$\hat x=[\hat r;\hat\eta;\hat v;E^{-1}(\Omega_m-\hat b_g)]$.
-The averaged-input noise covariance is conservative and omits adjacent
-sample correlation; this is not a certified EKF consistency study.
+The controllers receive this estimate, never the exact state in sensed
+runs. The filter starts from noisy sensor readings. Its uncertainty
+calculation includes approximations; passing the numerical checks does
+not prove that its confidence estimates are perfect.
 
 ## Testing
 

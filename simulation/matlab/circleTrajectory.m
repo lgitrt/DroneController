@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function ref = circleTrajectory(t, p, traj)
 %CIRCLETRAJECTORY Reference trajectory generator: smooth-start circle.
 %   REF = CIRCLETRAJECTORY(T, P, TRAJ) evaluates the reference trajectory
