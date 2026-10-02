@@ -1,0 +1,14 @@
+# Build output
+Debug/
+Release/
+
+# STM32CubeIDE / Eclipse workspace metadata (local to each machine)
+.metadata/
+
+# Host-side unit test build output
+tests/build/
+
+# OS / editor cruft
+*.swp
+.DS_Store
+Thumbs.db
