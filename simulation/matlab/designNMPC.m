@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function nlobj = designNMPC(p, Ts, varargin)
 %DESIGNNMPC Experimental nonlinear MPC template (not the tested comparison).
 %   NLOBJ = DESIGNNMPC(P, TS) builds an nlmpc object that stabilizes

@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [T, M] = mixingMatrix(p)
 %MIXINGMATRIX Rotor-command <-> virtual-input mixing matrix.
 %   [T, M] = MIXINGMATRIX(P) returns the 4x4 matrix M such that

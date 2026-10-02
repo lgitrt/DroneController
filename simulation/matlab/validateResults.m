@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function report = validateResults(seeds)
 %VALIDATERESULTS Independently score sensed runs across explicit noise seeds.
 %   Exports numerical evidence only; no figures or controller retuning.

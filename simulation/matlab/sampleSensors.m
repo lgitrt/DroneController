@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [sample, bias] = sampleSensors(x, acceleration, index, bias, stream, cfg, p)
 %SAMPLESENSORS Noisy body-frame specific force, angular rate, RTK and field.
 %   Truth is used only here to synthesize measurements, never by the EKF.

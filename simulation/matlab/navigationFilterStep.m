@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [filter, state] = navigationFilterStep(filter, sample, dt, cfg, p)
 %NAVIGATIONFILTERSTEP 15-state inertial navigation EKF with bias estimation.
 %   Only measurements and noise parameters enter this estimator.

@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function metrics = plotComparison(outputs, p, outDir, rampTime, selected)
 %PLOTCOMPARISON Export selected figures; use {'all'} for local diagnostics.
 if nargin < 5

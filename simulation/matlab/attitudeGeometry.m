@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [R, E] = attitudeGeometry(angles)
 %ATTITUDEGEOMETRY Body-to-inertial ZYX rotation and Euler-rate mapping.
 phi = angles(1); theta = angles(2); psi = angles(3);

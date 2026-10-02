@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function controller = designPID()
 %DESIGNPID Cascaded position PID and attitude PID with physical mixing.
 controller.type = 'PID';

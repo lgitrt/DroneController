@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function cfg = comparisonConfiguration()
 %COMPARISONCONFIGURATION Shared experiment definition for plots and audits.
 cfg.p = parameters();

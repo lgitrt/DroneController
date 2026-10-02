@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function mpcobj = designMPC_Linear(p, Ts, varargin)
 %DESIGNMPC_LINEAR Constrained MPC with normalized hover-deviation inputs.
 %   The manipulated variable is (u-uHover)/uHover, not absolute rotor speed.

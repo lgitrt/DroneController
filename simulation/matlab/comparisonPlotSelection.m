@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function names = comparisonPlotSelection(scenario)
 %COMPARISONPLOTSELECTION Six figures retained in version control.
 switch scenario

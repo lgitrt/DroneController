@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [K, A, B, Q, R] = designLQR(p, varargin)
 %DESIGNLQR Linear-Quadratic-Regulator gain for hover-linearized quadrotor.
 %   [K, A, B] = DESIGNLQR(P) linearizes the quadrotor dynamics about

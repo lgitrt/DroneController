@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function metrics = trackingMetrics(out, p, rampTime)
 %TRACKINGMETRICS Physical-distance errors and explicitly defined effort.
 error = out.X(1:3,:)-out.Ref(1:3,:);

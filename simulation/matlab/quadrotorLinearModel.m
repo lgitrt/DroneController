@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function [A, B] = quadrotorLinearModel(p)
 %QUADROTORLINEARMODEL Linearized quadrotor model about hover.
 %   [A, B] = QUADROTORLINEARMODEL(P) returns the continuous-time state

@@ -1,3 +1,4 @@
+% Author: Luca Obwegs
 function scenarios = comparisonScenarios(includeSensors)
 %COMPARISONSCENARIOS Reproducible ideal and unmodelled wind/motor-lag cases.
 ideal.name = 'Ideal baseline';
