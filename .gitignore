@@ -18,6 +18,9 @@ simulation/**/codegen/
 simulation/**/*_ert_rtw/
 simulation/**/*_grt_rtw/
 
+# Optional full MATLAB diagnostic gallery; only selected plots are published
+simulation/results/local/
+
 # OS / editor cruft
 *.swp
 .DS_Store

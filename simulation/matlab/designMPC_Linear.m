@@ -23,7 +23,7 @@ mpcobj.Model.Nominal.U = zeros(4,1);
 mpcobj.Model.Nominal.Y = zeros(12,1);
 mpcobj.Model.Noise = ss(eye(12));
 
-% Both controllers receive the true plant state, without a hidden estimator.
+% State feedback is supplied by the simulator's shared estimator or baseline.
 setoutdist(mpcobj, 'model', ss(zeros(12,1)));
 setEstimator(mpcobj, 'custom');
 for i = 1:4
