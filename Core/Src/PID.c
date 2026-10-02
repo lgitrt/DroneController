@@ -2,7 +2,7 @@
  * PID.c
  *
  *  Created on: Dec 15, 2024
- *      Author: OBWELUC
+ *      Author: Luca Obwegs
  */
 
 #include "PID.h"

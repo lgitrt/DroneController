@@ -2,7 +2,7 @@
  * mpu6050.h
  *
  *  Created on: Dec 19, 2024
- *      Author: OBWELUC
+ *      Author: Luca Obwegs
  */
 
 #ifndef INC_MPU6050_H_

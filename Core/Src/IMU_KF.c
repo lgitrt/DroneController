@@ -2,7 +2,7 @@
  * IMU_KF.c
  *
  *  Created on: Nov 25, 2024
- *      Author: OBWELUC
+ *      Author: Luca Obwegs
  */
 
 #include "IMU_KF.h"

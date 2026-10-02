@@ -2,7 +2,7 @@
  * mpu6050.c
  *
  *  Created on: Dec 19, 2024
- *      Author: OBWELUC
+ *      Author: Luca Obwegs
  */
 
 

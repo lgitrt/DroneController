@@ -2,7 +2,7 @@
  * PID.h
  *
  *  Created on: Dec 15, 2024
- *      Author: OBWELUC
+ *      Author: Luca Obwegs
  */
 
 #ifndef INC_PID_H_
