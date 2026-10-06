@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="600" viewBox="0 0 1100 600" role="img" aria-labelledby="title description">
+  <title id="title">Firmware and MATLAB quadrotor control flows</title>
+  <desc id="description">The manually implemented STM32 C firmware uses an MPU6050 complementary roll/pitch filter and PD attitude controller. Yaw and thrust are direct RC command paths, then a motor mixer drives four ESC PWM outputs. A separate MATLAB simulation uses a navigation EKF and PID, LQR, or linear MPC controllers.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0 0L9 4.5L0 9Z" fill="#38bdf8"/></marker>
+    <style>
+      text { font: 17px Arial, sans-serif; fill: #dbeafe; }
+      .title { font-size: 23px; font-weight: bold; fill: #f8fafc; }
+      .heading { font-size: 18px; font-weight: bold; }
+      .small { font-size: 14px; fill: #a9bdd4; }
+      .box { fill: #111e32; stroke: #38516d; stroke-width: 1.5; rx: 12; }
+      .estimate { stroke: #38bdf8; }
+      .controller { stroke: #a78bfa; }
+      .flow { fill: none; stroke: #38bdf8; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1100" height="600" rx="16" fill="#09111f"/>
+  <text x="30" y="40" class="title">STM32 firmware · manually implemented C · nominal 1 ms loop target</text>
+  <rect x="30" y="75" width="235" height="105" class="box"/>
+  <text x="48" y="105" class="heading">MPU6050 IMU</text>
+  <text x="48" y="133">Accelerometer / gyro</text>
+  <text x="48" y="157" class="small">200 Hz output / calibration</text>
+  <rect x="340" y="75" width="300" height="105" class="box estimate"/>
+  <text x="358" y="105" class="heading">Attitude estimate</text>
+  <text x="358" y="133">Active: complementary roll/pitch</text>
+  <text x="358" y="157" class="small">Alternate: scalar roll/pitch KF</text>
+  <path d="M265 127H340" class="flow"/>
+  <rect x="710" y="75" width="350" height="105" class="box controller"/>
+  <text x="728" y="105" class="heading">Roll / pitch PD</text>
+  <text x="728" y="133">Estimate + RC attitude references</text>
+  <text x="728" y="157" class="small">Yaw and throttle remain direct commands</text>
+  <path d="M640 127H710" class="flow"/>
+  <rect x="340" y="230" width="300" height="90" class="box"/>
+  <text x="358" y="263" class="heading">Plus-frame motor mixer</text>
+  <text x="358" y="292">Thrust + torque commands</text>
+  <path d="M1035 180V220H650V275H640" class="flow"/>
+  <text x="750" y="213" class="small">PD torque requests</text>
+  <rect x="30" y="230" width="235" height="90" class="box"/>
+  <text x="48" y="263" class="heading">RC receiver</text>
+  <text x="48" y="292" class="small">Attitude refs · direct yaw/throttle</text>
+  <path d="M265 260H285V205H680V150H710" class="flow"/>
+  <path d="M265 300H340" class="flow"/>
+  <text x="405" y="198" class="small">Roll / pitch references</text>
+  <rect x="710" y="230" width="350" height="90" class="box"/>
+  <text x="728" y="263" class="heading">4 ESC PWM outputs</text>
+  <text x="728" y="292">Bounded motor-speed commands</text>
+  <path d="M640 275H710" class="flow"/>
+  <path d="M1060 275H1080V350H18V127H30" class="flow"/>
+  <text x="370" y="341" class="small">Measured physical motion returns through the IMU</text>
+  <path d="M30 370H1070" stroke="#38516d" stroke-width="2" stroke-dasharray="8 6"/>
+  <text x="30" y="405" class="title">Separate MATLAB simulation · not deployed firmware</text>
+  <rect x="30" y="435" width="240" height="105" class="box"/>
+  <text x="48" y="465" class="heading">Nonlinear plant</text>
+  <text x="48" y="493">Synthetic IMU + aiding sensors</text>
+  <text x="48" y="517" class="small">Truth used for scoring</text>
+  <rect x="340" y="435" width="300" height="105" class="box estimate"/>
+  <text x="358" y="465" class="heading">15-state navigation EKF</text>
+  <text x="358" y="493">IMU prediction + aiding updates</text>
+  <text x="358" y="517" class="small">MATLAB implementation</text>
+  <path d="M270 487H340" class="flow"/>
+  <rect x="710" y="435" width="350" height="105" class="box controller"/>
+  <text x="728" y="465" class="heading">PID · LQR · linear MPC</text>
+  <text x="728" y="493">20 Hz trajectory control comparison</text>
+  <text x="728" y="517" class="small">MATLAB; no generated C/C++</text>
+  <path d="M640 487H710" class="flow"/>
+  <text x="30" y="575" class="small">Euler-angle firmware filters and PD are distinct from the simulation EKF and trajectory controllers.</text>
+</svg>

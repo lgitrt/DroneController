@@ -1,6 +1,6 @@
 /*
  * test_imu_kf.c — Host-side characterization tests for the attitude estimators
- * in IMU_KF.c (the fixed-gain roll/pitch Kalman filter and the complementary
+ * in IMU_KF.c (the scalar roll/pitch Kalman filter and the complementary
  * filter actually wired up in main.c).
  *
  * Author: Luca Obwegs
@@ -73,6 +73,43 @@ static void test_comp_filter_converges_to_static_tilt(void)
     CHECK_NEAR(cf.phi, 0.0, 1e-6, "comp. filter roll must stay level while only pitch is tilted");
 }
 
+static void settle_comp_filter_at_level(void)
+{
+    for (int i = 0; i < 1000; i++) {
+        callCompFilter(0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.01);
+    }
+}
+
+static void test_comp_filter_gyro_x_only_changes_pitch(void)
+{
+    const double dt = 0.01;
+    const double gyro_rate = 90.0;
+    const double expected_pitch = (1.0 - 0.02) * gyro_rate * dt * pi / 180.0;
+
+    settle_comp_filter_at_level();
+    struct est cf = callCompFilter(0.0, 0.0, 1.0, gyro_rate, 0.0, 0.0, dt);
+
+    CHECK_NEAR(cf.theta, expected_pitch, 1e-7,
+               "positive gyro x must integrate into pitch");
+    CHECK_NEAR(cf.phi, 0.0, 1e-7,
+               "gyro x must not integrate into roll");
+}
+
+static void test_comp_filter_gyro_y_only_changes_roll(void)
+{
+    const double dt = 0.01;
+    const double gyro_rate = 90.0;
+    const double expected_roll = -(1.0 - 0.02) * gyro_rate * dt * pi / 180.0;
+
+    settle_comp_filter_at_level();
+    struct est cf = callCompFilter(0.0, 0.0, 1.0, 0.0, gyro_rate, 0.0, dt);
+
+    CHECK_NEAR(cf.phi, expected_roll, 1e-7,
+               "positive gyro y must integrate into negative roll");
+    CHECK_NEAR(cf.theta, 0.0, 1e-7,
+               "gyro y must not integrate into pitch");
+}
+
 /* callCompFilter() never sets estComp.psi, so the struct returned to the
  * caller (which in main.c forces estimate.psi = 0 itself) must not have a
  * stale/garbage yaw value carried over between calls. */
@@ -87,6 +124,8 @@ int main(void)
     test_level_accel_holds_zero();
     test_kf_converges_to_static_tilt();
     test_comp_filter_converges_to_static_tilt();
+    test_comp_filter_gyro_x_only_changes_pitch();
+    test_comp_filter_gyro_y_only_changes_roll();
     test_comp_filter_leaves_yaw_untouched();
     TEST_SUMMARY();
 }

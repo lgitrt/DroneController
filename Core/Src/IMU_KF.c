@@ -111,12 +111,11 @@ struct est callCompFilter(double ax, double ay, double az, double gx, double gy,
 	phiS = atan2(ay, (az));
 	thetaS = atan2(ax, (az));
 	pitchComp = (1-alpha)*(pitchComp+gx*ts*pi/180)+alpha*thetaS;
-	rollComp = (1-alpha)*(rollComp+gx*ts*pi/180)+alpha*phiS;
+	rollComp = (1-alpha)*(rollComp-gy*ts*pi/180)+alpha*phiS;
 
 	estComp.phi = rollComp;
 	estComp.theta = pitchComp;
 
 	return estComp;
 }
-
 

@@ -1,14 +1,12 @@
 # DroneController
 
-**A quadcopter flight controller built from scratch on an STM32G4, from raw
-IMU registers to motor PWM.**
+**A quadcopter flight-controller prototype built from scratch on an STM32G4,
+from raw IMU registers to motor PWM.**
 
-DroneController is a complete "+"-configuration quadrotor flight-control
-firmware: it reads an MPU6050 IMU and an RC receiver, fuses the IMU
-readings into roll/pitch attitude estimates, runs a PID control loop
-against the stick/throttle commands, and mixes the result into four ESC
-PWM outputs — all inside a hard real-time 1 kHz control loop on a
-Cortex-M4.
+The firmware reads an MPU6050 IMU and an RC receiver, estimates roll/pitch,
+applies proportional-derivative (PD) attitude control, and mixes commands
+into four ESC PWM outputs. Its main loop targets a nominal 1 ms period; that
+timing target has not been demonstrated as a hard real-time guarantee.
 
 The **IMU** measures acceleration-related force and turning rate.
 **PWM** is a pulse signal sent to each **ESC** (electronic speed controller)
@@ -19,6 +17,8 @@ tilt; yaw means turning the heading.
 ![license](https://img.shields.io/badge/license-GPLv3-informational)
 ![tests](https://github.com/lgitrt/DroneController/actions/workflows/tests.yml/badge.svg)
 
+![Embedded firmware and separate MATLAB simulation control pipelines](control-flow.svg)
+
 ![CAD assembly of the quadrotor frame](images/drone-cad-assembly.png)
 
 ---
@@ -26,29 +26,28 @@ tilt; yaw means turning the heading.
 ## Why this project
 
 Rather than starting from an existing flight-control stack (Betaflight,
-ArduPilot, ...), this project builds every layer of the controller from
-first principles: the IMU driver, the attitude estimator, the PID loop,
-and the motor-mixing law are all hand-written and tuned specifically for
-this airframe. The goal was to understand — and be able to defend every
-line of — the full path from raw accelerometer/gyro counts to commanded
-motor speed, running under a hard 1 ms control-loop budget.
+ArduPilot, ...), this project implements the IMU driver, attitude estimators,
+PD attitude controller, and motor mixer in C for this airframe. The goal is
+to understand the path from raw accelerometer/gyro counts to motor commands.
+The separate MATLAB study explores other models and control methods; it is
+not generated firmware.
 
 ## Key engineering highlights
 
-- **Two attitude estimators, same interface**: a fixed-gain Kalman filter
-  (`callKF`) and a complementary filter (`callCompFilter`) both estimate
-  roll/pitch from accelerometer + gyro data behind the same `struct est`
-  interface, so the active estimator is a one-line swap in
-  [`main.c`](Core/Src/main.c).
+- **Two attitude estimators, same interface**: an accelerometer/gyro
+  complementary filter (`callCompFilter`) and an alternative scalar
+  roll/pitch Kalman filter (`callKF`) share the same `struct est` interface.
+  The Kalman filter updates its covariance and gain each sample; the active
+  loop currently calls the complementary filter in [`main.c`](Core/Src/main.c).
 - **Interrupt-driven RC decoding**: all four RC channels (roll, pitch, yaw,
   throttle) are decoded concurrently from standard hobby-PWM pulses using
   input-capture timers in indirect mode (one channel's rising-edge period,
   the other's pulse width), with a digital low-pass filter smoothing each
   decoded channel before it reaches the controller.
-- **Deterministic 1 kHz control loop**: a free-running timer (`TIM6`) is
-  polled at the end of every loop iteration to pad execution out to an
-  exact 1 ms period — sensor read, attitude estimate, PID update, and
-  motor-mixing all have to fit comfortably inside that budget.
+- **Nominal 1 kHz loop target**: a free-running timer (`TIM6`) is polled at
+  the end of each loop iteration to pad it to 1 ms. The MPU6050 is configured
+  for a 200 Hz sample rate, and no deadline instrumentation or worst-case
+  timing evidence is provided; this is not a hard-real-time claim.
 - **Startup self-calibration**: the firmware automatically runs a gyro-bias
   calibration (stationary averaging window) and an ESC calibration
   sequence (max-then-min throttle pulse) every boot, before entering the
@@ -57,8 +56,7 @@ motor speed, running under a hard 1 ms control-loop budget.
   converts roll/pitch/yaw/thrust commands into four motor angular speeds
   via the drone's real arm length and thrust/drag coefficients
   (`PID.h`), square-roots the per-motor thrust demand into a commanded
-  speed, and clamps it to the ESC's actual PWM range and the motor's rated
-  maximum speed.
+  speed, and clamps it to `w_max` before PWM conversion.
 
 ## Hardware
 
@@ -73,6 +71,11 @@ The schematic and PCB below are from the custom sensor/IO carrier board
 for this airframe (IMU, ultrasonic rangefinder, ESP32 wireless link, and
 the PWM breakout to the flight-controller MCU); the firmware in this
 repo currently drives the core IMU + RC + ESC path described above.
+Hardware records: [CAD assembly](images/drone-cad-assembly.png),
+[carrier schematic](images/electronics-schematic.png),
+[PCB layout](images/pcb-layout.png), and
+[bench test rig](images/drone-test-rig.jpg). The rig photo is not evidence
+of stable hover or a quantified flight test.
 
 <p>
   <img src="images/electronics-schematic.png" alt="Flight controller carrier board schematic" width="49%">
@@ -85,9 +88,9 @@ repo currently drives the core IMU + RC + ESC path described above.
 Core/
 ├── Inc/                  Public headers for every module
 ├── Src/
-│   ├── main.c             Peripheral init, RC decode ISR, 1 kHz control loop, calibration
-│   ├── IMU_KF.c            Roll/pitch Kalman filter + complementary filter (shared `struct est`)
-│   ├── PID.c               Roll/pitch/yaw/altitude PID loops + "+"-config motor mixing
+│   ├── main.c             Peripheral init, RC decode ISR, nominal 1 kHz loop, calibration
+│   ├── IMU_KF.c            Roll/pitch scalar Kalman filter + complementary filter
+│   ├── PID.c               Roll/pitch PD + direct yaw/thrust commands and "+"-frame mixing
 │   ├── mpu6050.c           MPU6050 IMU driver (I2C register read/write, raw-to-SI conversion)
 │   └── stm32g4xx_*.c       STM32CubeMX-generated HAL glue (clocks, IRQ vectors, syscalls)
 └── Startup/               STM32CubeMX-generated startup assembly
@@ -95,18 +98,37 @@ Core/
 
 ### Control pipeline
 
-```
-RC receiver (4ch PWM) ──► Input-capture timers ──► low-pass filter ──► roll/pitch/yaw/thrust refs
-                                                                               │
-MPU6050 (accel + gyro) ──► callCompFilter / callKF ──► roll, pitch estimate ──┼──► PID (callPID) ──► motor mixing ──► 4× ESC PWM
-                                                                               │        (roll/pitch/yaw/altitude loops)
-                                                              1 kHz loop, timed by TIM6
-```
+See the diagram above for the embedded and simulation flows. In the active
+firmware path, filtered RC roll/pitch references and the complementary-filter
+estimate feed PD attitude control. RC yaw is scaled into a yaw command and
+throttle is passed directly as thrust; neither yaw nor altitude is closed-loop
+feedback. The mixer produces four motor speeds for PWM conversion.
 
-The two attitude estimators in [`IMU_KF.c`](Core/Src/IMU_KF.c) are kept
-side by side intentionally: `callCompFilter` is what `main.c` currently
-calls, while `callKF` implements a fixed-gain roll/pitch Kalman filter
-behind the identical interface for direct comparison.
+[`callCompFilter`](Core/Src/IMU_KF.c) is the active firmware estimator.
+[`callKF`](Core/Src/IMU_KF.c) is an alternative scalar angle Kalman filter:
+it predicts each roll/pitch angle from gyro data and updates its scalar
+covariance and Kalman gain using accelerometer tilt. It does not estimate yaw.
+
+### Firmware and simulation boundary
+
+The firmware is manually implemented C. It uses Euler roll/pitch angles, the
+complementary filter above, and the roll/pitch PD controller in `PID.c`; yaw
+and thrust are direct command paths. `callKF` is an alternate scalar roll/
+pitch estimator, not the active path. Firmware contains no navigation EKF,
+LQR, MPC, quaternion filter, or multiplicative EKF.
+
+The standalone MATLAB study has its own 12-state plant, 15-state navigation
+EKF, and separately implemented PID, LQR, and linear MPC controllers. Those
+models and algorithms are written in MATLAB; they are not Simulink auto-coded
+C/C++ and are not deployed to the STM32. The study's simulation results do
+not validate firmware performance.
+
+`TIM6` is configured for a 1 microsecond counter tick. The loop resets and
+polls it until 1,000 ticks, which is a nominal 1 ms pacing target, not a
+deadline monitor or hard-real-time proof. The MPU6050 output rate is configured
+to 200 Hz while the main loop reads it on each iteration. No dynamic allocation
+was found on the active sensor-read, complementary-filter, PD, and mixer call
+path; this alone does not establish timing or safety.
 
 ## MATLAB controller simulation
 
@@ -116,7 +138,9 @@ The standalone [simulation](simulation/README.md) lives entirely in
 mixing** on the same nonlinear quadrotor plant. Noisy-sensor experiments
 use an **extended Kalman filter (EKF)** to estimate motion from noisy
 sensors instead of giving the controllers the exact simulated state.
-These are simulation results, not hardware flight-test results.
+These are simulation results, not hardware flight-test results. The embedded
+firmware and MATLAB study are separate implementations; only the MATLAB
+study contains the navigation EKF, LQR, and MPC controllers.
 
 From the repository root in MATLAB (Control System Toolbox and Model
 Predictive Control Toolbox required):
@@ -207,6 +231,10 @@ be generated locally using the [simulation guide](simulation/README.md).
 **Noisy sensors: per-axis and 3D tracking errors**
 
 ![Sensed tracking metrics for LQR, MPC, and PID](simulation/results/sensors/rmse_summary.png)
+
+Simulation artifacts: [all metrics](simulation/results/metrics.csv),
+[three-seed validation](simulation/results/validation.csv), and
+[sensor-case plots](simulation/results/sensors/).
 
 **The simulated IMU: body-frame specific force and angular velocity**
 
@@ -419,10 +447,11 @@ there are no mocks of the filter or control logic.
 make -C tests test
 ```
 
-Coverage includes rest-state and static-tilt convergence checks for both
-attitude estimators, and motor-mixing invariants for the PID loop (equal
-motor speeds under pure hover thrust, correct differential thrust under a
-roll command, and saturation at both the zero floor and `w_max`). This
+Coverage includes rest-state, static-tilt convergence, and isolated dynamic
+gyro-axis checks for the attitude estimators, and motor-mixing invariants
+for the control path (equal motor speeds under pure hover thrust, correct
+differential thrust under a roll command, and saturation at both the zero
+floor and `w_max`). This
 suite runs automatically on every push via
 [GitHub Actions](.github/workflows/tests.yml).
 
@@ -445,10 +474,11 @@ regeneration.
 ## Status
 
 This is an active personal R&D project rather than a flight-proven,
-production flight stack: the Kalman filter and complementary filter are
-both implemented and unit-tested, but only the complementary filter has
-been flown. Treat the gyro-offset constants and PID gains in
-[`PID.h`](Core/Inc/PID.h) as airframe-specific starting points, not
+production flight stack. Host tests verify selected estimator and mixer
+properties, not closed-loop flight behavior. The repository contains no
+verified stable-hover or autonomous-flight evidence; the bench-rig image
+documents hardware only. Treat gyro-offset constants and controller gains
+in [`PID.h`](Core/Inc/PID.h) as airframe-specific starting points, not
 general-purpose defaults.
 
 ![Bench test rig, tethered for safety during attitude-control tuning](images/drone-test-rig.jpg)
