@@ -99,10 +99,13 @@ Core/
 ### Control pipeline
 
 See the diagram above for the embedded and simulation flows. In the active
-firmware path, filtered RC roll/pitch references and the complementary-filter
-estimate feed PD attitude control. RC yaw is scaled into a yaw command and
-throttle is passed directly as thrust; neither yaw nor altitude is closed-loop
-feedback. The mixer produces four motor speeds for PWM conversion.
+firmware path, the complementary-filter estimate feeds PD attitude control.
+RC values are decoded and filtered, but the checked-in main loop then overrides
+roll, pitch, and yaw commands to zero for level-reference testing. Throttle
+remains a direct thrust command; neither yaw nor altitude is closed-loop feedback.
+The controller/mixer supports roll/pitch references and a direct yaw command,
+but those inputs are zeroed by this main-loop configuration. The mixer produces
+four motor speeds for PWM conversion.
 
 [`callCompFilter`](Core/Src/IMU_KF.c) is the active firmware estimator.
 [`callKF`](Core/Src/IMU_KF.c) is an alternative scalar angle Kalman filter:
